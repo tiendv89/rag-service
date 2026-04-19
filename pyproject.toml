@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "rag-service"
@@ -9,6 +9,7 @@ description = "RAG services for agent context (schema, indexer, MCP server)"
 requires-python = ">=3.11"
 dependencies = [
     "qdrant-client>=1.9.0",
+    "sentence-transformers>=2.7.0",
 ]
 
 [project.optional-dependencies]
