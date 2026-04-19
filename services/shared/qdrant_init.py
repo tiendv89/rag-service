@@ -12,7 +12,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qdrant_models
 from qdrant_client.http.exceptions import UnexpectedResponse
 
-from services.shared.schema import ChunkPayload, build_workspace_filter
+from services.shared.schema import build_workspace_filter
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +53,10 @@ def init_collection(client: QdrantClient, workspace_id: str) -> bool:
         client.get_collection(collection_name=collection)
         logger.debug("Collection %r already exists — skipping creation", collection)
         return False
-    except (UnexpectedResponse, Exception) as exc:
+    except Exception as exc:
         # qdrant-client raises UnexpectedResponse (404) when the collection
-        # does not exist. We catch broadly and check the status code.
-        if _is_not_found(exc):
-            pass
-        else:
+        # does not exist. Re-raise anything that is not a 404.
+        if not _is_not_found(exc):
             raise
 
     client.create_collection(

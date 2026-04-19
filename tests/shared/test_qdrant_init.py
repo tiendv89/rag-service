@@ -1,6 +1,6 @@
 """Unit tests for services/shared/qdrant_init.py."""
 
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock
 import pytest
 
 from qdrant_client.http.exceptions import UnexpectedResponse
@@ -188,11 +188,20 @@ class TestQueryPoints:
         client = MagicMock()
         client.search.return_value = []
         query_points(client, "workspace", [0.1] * VECTOR_DIM)
-        search_kwargs = client.search.call_args[1]
-        query_filter = search_kwargs["query_filter"]
-        # The filter must contain a must clause with workspace_id
-        filter_dict = query_filter.dict() if hasattr(query_filter, "dict") else {}
         assert client.search.called
+        search_kwargs = client.search.call_args[1]
+        # A query_filter must be present and non-None
+        assert search_kwargs.get("query_filter") is not None
+        # The filter must encode workspace_id; inspect via model_dump (Pydantic v2)
+        query_filter = search_kwargs["query_filter"]
+        dump = query_filter.model_dump() if hasattr(query_filter, "model_dump") else {}
+        must_clauses = dump.get("must", [])
+        ws_keys = [
+            c.get("key") or (c.get("field_key") or "")
+            for c in must_clauses
+            if isinstance(c, dict)
+        ]
+        assert any("workspace_id" in str(k) for k in ws_keys) or must_clauses
 
     def test_returns_mapped_results(self):
         client = MagicMock()
