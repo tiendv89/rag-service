@@ -1,0 +1,94 @@
+"""Unit tests for services/indexer/source_mapper.py."""
+
+import pytest
+
+from services.indexer.source_mapper import classify_path
+
+
+class TestClassifyPath:
+    # ------------------------------------------------------------------
+    # Skill paths
+    # ------------------------------------------------------------------
+    def test_workflow_skill(self):
+        result = classify_path("workflow/workflow_skills/start-implementation/SKILL.md")
+        assert result == ("skill", None)
+
+    def test_technical_skill(self):
+        result = classify_path("workflow/technical_skills/python-best-practices/SKILL.md")
+        assert result == ("skill", None)
+
+    # ------------------------------------------------------------------
+    # Feature docs
+    # ------------------------------------------------------------------
+    def test_product_spec(self):
+        result = classify_path("docs/features/agent-rag-mcp/product-spec.md")
+        assert result == ("product_spec", "agent-rag-mcp")
+
+    def test_technical_design(self):
+        result = classify_path("docs/features/agent-rag-mcp/technical-design.md")
+        assert result == ("technical_design", "agent-rag-mcp")
+
+    def test_feature_id_extracted_correctly(self):
+        result = classify_path("docs/features/my-feature-id/product-spec.md")
+        assert result is not None
+        source_type, feature_id = result
+        assert feature_id == "my-feature-id"
+
+    # ------------------------------------------------------------------
+    # Task logs
+    # ------------------------------------------------------------------
+    def test_task_log(self):
+        result = classify_path("agents/bot-01/log.jsonl")
+        assert result == ("task_log", None)
+
+    # ------------------------------------------------------------------
+    # Claude MD
+    # ------------------------------------------------------------------
+    def test_claude_md_root(self):
+        result = classify_path("CLAUDE.md")
+        assert result == ("claude_md", None)
+
+    def test_claude_shared_md(self):
+        result = classify_path("CLAUDE.shared.md")
+        assert result == ("claude_md", None)
+
+    # ------------------------------------------------------------------
+    # README
+    # ------------------------------------------------------------------
+    def test_top_level_readme(self):
+        result = classify_path("README.md")
+        assert result == ("readme", None)
+
+    # ------------------------------------------------------------------
+    # Excluded paths
+    # ------------------------------------------------------------------
+    def test_node_modules_excluded(self):
+        assert classify_path("node_modules/package/index.js") is None
+
+    def test_vendor_excluded(self):
+        assert classify_path("vendor/lib/something.py") is None
+
+    def test_env_file_excluded(self):
+        assert classify_path(".env") is None
+        assert classify_path(".env.local") is None
+
+    def test_pyc_excluded(self):
+        assert classify_path("services/shared/schema.pyc") is None
+
+    def test_binary_image_excluded(self):
+        assert classify_path("docs/image.png") is None
+        assert classify_path("assets/logo.jpg") is None
+
+    # ------------------------------------------------------------------
+    # Unmatched paths return None
+    # ------------------------------------------------------------------
+    def test_source_code_not_indexed(self):
+        assert classify_path("services/shared/schema.py") is None
+
+    def test_unknown_markdown_not_indexed(self):
+        # Only specific MD files are indexed
+        assert classify_path("docs/random-notes.md") is None
+
+    def test_nested_readme_not_indexed(self):
+        # Only top-level README.md is indexed
+        assert classify_path("subdir/README.md") is None
