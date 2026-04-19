@@ -5,6 +5,7 @@ These tests cover the core indexing logic without requiring a live
 Qdrant instance or real git repositories.
 """
 
+import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -20,9 +21,12 @@ from services.indexer.embedder import Embedder
 # ---------------------------------------------------------------------------
 
 class TestPointId:
-    def test_returns_string(self):
+    def test_returns_valid_uuid_string(self):
         pid = _point_id("/repos/workspace", "README.md", 0)
         assert isinstance(pid, str)
+        # Must be parseable as UUID
+        parsed = uuid.UUID(pid)
+        assert str(parsed) == pid
 
     def test_deterministic(self):
         a = _point_id("/repos/workspace", "README.md", 0)
@@ -38,10 +42,6 @@ class TestPointId:
         a = _point_id("/repos/workspace", "README.md", 0)
         b = _point_id("/repos/workspace", "CLAUDE.md", 0)
         assert a != b
-
-    def test_id_length_is_32(self):
-        pid = _point_id("/repos/workspace", "README.md", 0)
-        assert len(pid) == 32
 
 
 # ---------------------------------------------------------------------------

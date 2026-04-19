@@ -25,6 +25,7 @@ import logging
 import os
 import signal
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -70,7 +71,8 @@ def _point_id(repo_path: str, rel_path: str, chunk_index: int) -> str:
     which allows Qdrant upsert to be truly idempotent (overwrite on re-index).
     """
     key = f"{repo_path}|{rel_path}|{chunk_index}"
-    return hashlib.sha256(key.encode()).hexdigest()[:32]
+    hex_digest = hashlib.sha256(key.encode()).hexdigest()[:32]
+    return str(uuid.UUID(hex=hex_digest))
 
 
 # ---------------------------------------------------------------------------

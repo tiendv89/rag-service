@@ -14,7 +14,6 @@ Token counting uses a simple whitespace-based word approximation
 
 import json
 import logging
-from typing import Iterator
 
 logger = logging.getLogger(__name__)
 
