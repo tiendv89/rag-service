@@ -30,14 +30,32 @@ Starts `uvicorn` on port 8000 and serves the MCP SSE endpoint at `/sse`.
 ### indexer
 
 Polls watched git repos on a configurable interval, detects changed files, and
-upserts embeddings into Qdrant.
+upserts embeddings into Qdrant.  Repo paths are driven by a `workspace.yaml`
+file that is **mounted into the container at startup** — not passed as an env var.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `QDRANT_URL` | yes | — | Qdrant instance URL |
 | `WORKSPACE_ID` | yes | — | Workspace partition key used as the Qdrant collection name |
-| `REPO_PATHS` | yes | — | Comma-separated absolute paths to git repos to index |
+| `WORKSPACE_YAML_PATH` | yes | — | Path to `workspace.yaml` mounted inside the container (e.g. `/workspace/workspace.yaml`) |
 | `INDEXER_POLL_INTERVAL_SECONDS` | no | `300` | Seconds between indexing cycles |
+
+#### workspace.yaml format
+
+`workspace.yaml` lists the repos the indexer should watch.  Each entry's
+`local_path` is the container-internal path where the repo is mounted:
+
+```yaml
+repos:
+  - id: management-repo
+    local_path: /repos/management-repo
+  - id: workflow
+    local_path: /repos/workflow
+```
+
+`local_path` may also reference an environment variable using the `env:VAR_NAME`
+syntax (e.g. `env:MANAGEMENT_REPO_PATH`).  Repos with an unresolvable reference
+are skipped with a warning so the indexer degrades gracefully.
 
 ---
 
@@ -78,9 +96,10 @@ services:
       SERVICE: indexer
       QDRANT_URL: http://qdrant:6333
       WORKSPACE_ID: my-workspace
-      REPO_PATHS: /repos/management-repo,/repos/workflow
+      WORKSPACE_YAML_PATH: /workspace/workspace.yaml
       INDEXER_POLL_INTERVAL_SECONDS: "60"
     volumes:
+      - /path/to/workspace.yaml:/workspace/workspace.yaml:ro
       - /path/to/local/repos:/repos:ro
     depends_on:
       - qdrant
@@ -93,7 +112,9 @@ Key points:
 
 - Set `SERVICE=rag_server` or `SERVICE=indexer` to choose which process runs.
 - Both containers share a Qdrant instance; `QDRANT_URL` must point to it.
-- The indexer needs the git repos mounted as volumes so it can read file history.
+- Mount `workspace.yaml` into the indexer container and set `WORKSPACE_YAML_PATH`
+  to its container path.  The file lists which repos to index.
+- The indexer also needs each repo mounted as a volume so it can read file history.
 - `WORKSPACE_ID` must match the ID used by the management repo so queries hit
   the correct Qdrant collection.
 
@@ -110,6 +131,6 @@ uv pip install --system -e .
 # Run rag_server locally (Qdrant must be reachable)
 QDRANT_URL=http://localhost:6333 uvicorn services.rag_server.server:create_app --factory --host 0.0.0.0 --port 8000
 
-# Run indexer locally
-QDRANT_URL=http://localhost:6333 WORKSPACE_ID=dev REPO_PATHS=/path/to/repo python -m services.indexer.main
+# Run indexer locally (workspace.yaml must exist at the given path)
+QDRANT_URL=http://localhost:6333 WORKSPACE_ID=dev WORKSPACE_YAML_PATH=/path/to/workspace.yaml python -m services.indexer.main
 ```

@@ -10,6 +10,13 @@ RUN uv pip install --system --no-cache -e .
 # Override at runtime: docker run -e SERVICE=indexer ...
 ENV SERVICE=rag_server
 
+# When running as the indexer, workspace.yaml must be mounted into the container
+# and WORKSPACE_YAML_PATH must point to it.  Example docker run flags:
+#   -v /path/to/workspace.yaml:/workspace/workspace.yaml:ro
+#   -e WORKSPACE_YAML_PATH=/workspace/workspace.yaml
+# workspace.yaml lists the repos to index; each repo must also be mounted
+# so the indexer can read file history.
+
 CMD if [ "$SERVICE" = "indexer" ]; then \
       exec python -m services.indexer.main; \
     else \

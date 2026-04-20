@@ -4,20 +4,26 @@ Indexer service entry point.
 Environment variables:
   QDRANT_URL                     URL of the Qdrant instance (required)
   WORKSPACE_ID                   Workspace partition key (required)
+  WORKSPACE_YAML_PATH            Path to workspace.yaml mounted inside the container
+                                 (required; e.g. /workspace/workspace.yaml)
   INDEXER_POLL_INTERVAL_SECONDS  Polling interval in seconds (default: 300)
-  REPO_PATHS                     Comma-separated list of repo root paths to index
-                                 (required; e.g. /repos/management-repo,/repos/workflow)
+
+  Repo paths are resolved from workspace.yaml → repos[].local_path at startup.
+  Each local_path may be a literal path or an ``env:VAR_NAME`` reference
+  (resolved from the container's environment). Repos with unresolvable
+  paths are skipped with a warning.
 
 The indexer:
-  1. Initialises the Qdrant collection for the workspace (idempotent).
-  2. On each cycle:
+  1. Reads workspace.yaml to discover which repos to watch.
+  2. Initialises the Qdrant collection for the workspace (idempotent).
+  3. On each cycle:
      a. git pull in every watched repo.
      b. Detect changed files via git diff since last cycle.
      c. Classify each file by source_type.
      d. Chunk and embed changed files.
      e. Upsert points to Qdrant.
      f. Advance the git watermark.
-  3. Sleep for INDEXER_POLL_INTERVAL_SECONDS, then repeat.
+  4. Sleep for INDEXER_POLL_INTERVAL_SECONDS, then repeat.
 """
 
 import hashlib
@@ -36,6 +42,7 @@ from services.indexer.chunker import chunk_document
 from services.indexer.embedder import Embedder
 from services.indexer.git_watcher import GitWatcher
 from services.indexer.source_mapper import classify_path
+from services.indexer.workspace_resolver import load_repo_paths
 from services.shared.qdrant_init import init_collection, upsert_points
 from services.shared.schema import ChunkPayload
 
@@ -234,10 +241,18 @@ def main() -> None:
     qdrant_url = os.environ["QDRANT_URL"]
     workspace_id = os.environ["WORKSPACE_ID"]
 
-    repo_paths_raw = os.environ.get("REPO_PATHS", "")
-    repo_paths = [p.strip() for p in repo_paths_raw.split(",") if p.strip()]
+    workspace_yaml_path = os.environ.get("WORKSPACE_YAML_PATH", "")
+    if not workspace_yaml_path:
+        raise ValueError(
+            "WORKSPACE_YAML_PATH must be set — path to the mounted workspace.yaml"
+        )
+
+    repo_paths = load_repo_paths(workspace_yaml_path)
     if not repo_paths:
-        raise ValueError("REPO_PATHS must be a non-empty comma-separated list of repo paths")
+        raise ValueError(
+            f"No repo paths resolved from {workspace_yaml_path} — "
+            "check that repos[].local_path env vars are set in the container"
+        )
 
     poll_interval = int(os.environ.get("INDEXER_POLL_INTERVAL_SECONDS", "300"))
 
