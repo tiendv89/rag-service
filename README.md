@@ -39,23 +39,39 @@ file that is **mounted into the container at startup** — not passed as an env 
 | `WORKSPACE_ID` | yes | — | Workspace partition key used as the Qdrant collection name |
 | `WORKSPACE_YAML_PATH` | yes | — | Path to `workspace.yaml` mounted inside the container (e.g. `/workspace/workspace.yaml`) |
 | `INDEXER_POLL_INTERVAL_SECONDS` | no | `300` | Seconds between indexing cycles |
+| `SSH_PRIVATE_KEY` | no | — | Raw PEM content of an SSH private key; written to a temp file at startup; used when cloning repos not mounted on disk (k8s / cloud) |
 
 #### workspace.yaml format
 
-`workspace.yaml` lists the repos the indexer should watch.  Each entry's
-`local_path` is the container-internal path where the repo is mounted:
+`workspace.yaml` lists the repos the indexer should watch.  The indexer uses a
+**clone-or-pull** strategy per repo:
+
+1. If `local_path` resolves to a directory that exists on the filesystem, the
+   indexer uses it directly (Docker Compose volume mount path).
+2. If `local_path` is absent, unset, or does not exist, the indexer clones the
+   repo from `github` (SSH URL) into `/tmp/indexer-repos/<repo_id>/` at startup
+   and runs `git pull` on each cycle.
 
 ```yaml
 repos:
+  # Mounted volume (Docker Compose / local dev)
   - id: management-repo
     local_path: /repos/management-repo
+    github: git@github.com:org/management-repo.git
+
+  # env:VAR_NAME reference — resolved at runtime; falls back to clone if unset
   - id: workflow
-    local_path: /repos/workflow
+    local_path: env:WORKFLOW_LOCAL_PATH
+    github: git@github.com:org/workflow.git
+
+  # No local_path — always cloned from ssh_url (k8s / cloud)
+  - id: rag-service
+    github: git@github.com:org/rag-service.git
 ```
 
-`local_path` may also reference an environment variable using the `env:VAR_NAME`
-syntax (e.g. `env:MANAGEMENT_REPO_PATH`).  Repos with an unresolvable reference
-are skipped with a warning so the indexer degrades gracefully.
+`local_path` may be a literal path or an `env:VAR_NAME` reference.  If the env
+var is unset the indexer falls back to cloning from `github`.  Repos with no
+`local_path` and no `github` URL are skipped with a warning.
 
 ---
 
@@ -98,6 +114,8 @@ services:
       WORKSPACE_ID: my-workspace
       WORKSPACE_YAML_PATH: /workspace/workspace.yaml
       INDEXER_POLL_INTERVAL_SECONDS: "60"
+      # Optional — only needed when repos are not pre-mounted (k8s / cloud)
+      # SSH_PRIVATE_KEY: <raw PEM content of SSH private key>
     volumes:
       - /path/to/workspace.yaml:/workspace/workspace.yaml:ro
       - /path/to/local/repos:/repos:ro

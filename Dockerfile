@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 WORKDIR /app
+# git and openssh-client are required by the indexer:
+#   git — for git pull, git diff, git ls-files (GitWatcher) and git clone (workspace_resolver clone fallback)
+#   openssh-client — for SSH authentication when cloning repos in k8s (SSH_PRIVATE_KEY env var)
+RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv
 COPY requirements.txt .
 RUN uv pip install --system --no-cache -r requirements.txt

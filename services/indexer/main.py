@@ -7,11 +7,15 @@ Environment variables:
   WORKSPACE_YAML_PATH            Path to workspace.yaml mounted inside the container
                                  (required; e.g. /workspace/workspace.yaml)
   INDEXER_POLL_INTERVAL_SECONDS  Polling interval in seconds (default: 300)
+  SSH_PRIVATE_KEY                Raw PEM content of an SSH private key (optional;
+                                 written to a temp file at startup; used when repos
+                                 are not pre-mounted in k8s/cloud)
 
-  Repo paths are resolved from workspace.yaml → repos[].local_path at startup.
-  Each local_path may be a literal path or an ``env:VAR_NAME`` reference
-  (resolved from the container's environment). Repos with unresolvable
-  paths are skipped with a warning.
+  Repo paths are resolved from workspace.yaml → repos[] at startup using a
+  clone-or-pull strategy:
+    1. If repos[].local_path exists on the filesystem → use it directly.
+    2. Otherwise → clone from repos[].github (ssh_url) into
+       /tmp/indexer-repos/<repo_id>/ using SSH_PRIVATE_KEY.
 
 The indexer:
   1. Reads workspace.yaml to discover which repos to watch.
