@@ -9,9 +9,8 @@ each repo using the following clone-or-pull algorithm:
   3. If local_path is absent, empty, or does not exist on the filesystem →
      clone from repos[].ssh_url into /tmp/indexer-repos/<repo_id>/.
 
-SSH authentication for step 3 uses (in order of preference):
-  - SSH_KEY_PATH env var: path to an SSH private key file
-  - SSH_PRIVATE_KEY env var: raw PEM content written to a temp file
+SSH authentication for step 3 uses the SSH_PRIVATE_KEY env var (raw PEM
+content written to a temp file at startup).
 
 Repos with no local_path AND no ssh_url are skipped with a warning.
 """
@@ -46,14 +45,10 @@ def _resolve_ssh_key() -> str | None:
     """
     Return the path to a usable SSH private key, or None if unavailable.
 
-    Checks SSH_KEY_PATH first; if absent checks SSH_PRIVATE_KEY (raw content)
-    and writes it to a temp file.  The temp file is not cleaned up because the
-    indexer is a long-running process and the file must survive across calls.
+    Reads SSH_PRIVATE_KEY (raw PEM content) and writes it to a temp file.
+    The temp file is not cleaned up because the indexer is a long-running
+    process and the file must survive across calls.
     """
-    key_path = os.environ.get("SSH_KEY_PATH", "")
-    if key_path and Path(key_path).exists():
-        return key_path
-
     raw_key = os.environ.get("SSH_PRIVATE_KEY", "")
     if raw_key:
         tmp = tempfile.NamedTemporaryFile(
@@ -133,7 +128,7 @@ def load_repo_paths(workspace_yaml_path: str) -> list[str]:
     2. If the resolved path exists on the filesystem → use it directly.
     3. If local_path is absent/unresolvable/non-existent → clone from
        repos[].ssh_url into /tmp/indexer-repos/<repo_id>/ using SSH key
-       from SSH_KEY_PATH or SSH_PRIVATE_KEY env vars.
+       from SSH_PRIVATE_KEY env var.
     4. Repos with neither a usable local_path nor an ssh_url are skipped.
 
     Args:

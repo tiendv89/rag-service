@@ -39,8 +39,7 @@ file that is **mounted into the container at startup** — not passed as an env 
 | `WORKSPACE_ID` | yes | — | Workspace partition key used as the Qdrant collection name |
 | `WORKSPACE_YAML_PATH` | yes | — | Path to `workspace.yaml` mounted inside the container (e.g. `/workspace/workspace.yaml`) |
 | `INDEXER_POLL_INTERVAL_SECONDS` | no | `300` | Seconds between indexing cycles |
-| `SSH_KEY_PATH` | no | — | Path to an SSH private key file; used when cloning repos not mounted on disk (k8s / cloud) |
-| `SSH_PRIVATE_KEY` | no | — | Raw PEM content of an SSH private key (alternative to `SSH_KEY_PATH`; written to a temp file at startup) |
+| `SSH_PRIVATE_KEY` | no | — | Raw PEM content of an SSH private key; written to a temp file at startup; used when cloning repos not mounted on disk (k8s / cloud) |
 
 #### workspace.yaml format
 
@@ -116,12 +115,10 @@ services:
       WORKSPACE_YAML_PATH: /workspace/workspace.yaml
       INDEXER_POLL_INTERVAL_SECONDS: "60"
       # Optional — only needed when repos are not pre-mounted (k8s / cloud)
-      SSH_KEY_PATH: /secrets/ssh/id_rsa
+      # SSH_PRIVATE_KEY: <raw PEM content of SSH private key>
     volumes:
       - /path/to/workspace.yaml:/workspace/workspace.yaml:ro
       - /path/to/local/repos:/repos:ro
-      # Mount SSH key when cloning is required (k8s pattern: use a Secret)
-      # - /path/to/id_rsa:/secrets/ssh/id_rsa:ro
     depends_on:
       - qdrant
 

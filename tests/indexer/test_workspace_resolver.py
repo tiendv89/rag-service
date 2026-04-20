@@ -39,22 +39,7 @@ class TestBuildGitSshCommand:
 
 
 class TestResolveSshKey:
-    def test_returns_key_path_when_ssh_key_path_set_and_exists(self, tmp_path, monkeypatch):
-        key_file = tmp_path / "id_rsa"
-        key_file.write_text("FAKE KEY")
-        monkeypatch.setenv("SSH_KEY_PATH", str(key_file))
-        monkeypatch.delenv("SSH_PRIVATE_KEY", raising=False)
-        result = _resolve_ssh_key()
-        assert result == str(key_file)
-
-    def test_returns_none_when_ssh_key_path_missing(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("SSH_KEY_PATH", str(tmp_path / "nonexistent.pem"))
-        monkeypatch.delenv("SSH_PRIVATE_KEY", raising=False)
-        result = _resolve_ssh_key()
-        assert result is None
-
     def test_writes_temp_file_from_ssh_private_key(self, monkeypatch):
-        monkeypatch.delenv("SSH_KEY_PATH", raising=False)
         monkeypatch.setenv("SSH_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nFAKE\n-----END RSA PRIVATE KEY-----\n")
         result = _resolve_ssh_key()
         assert result is not None
@@ -64,7 +49,6 @@ class TestResolveSshKey:
         assert oct(Path(result).stat().st_mode)[-3:] == "600"
 
     def test_returns_none_when_no_ssh_vars(self, monkeypatch):
-        monkeypatch.delenv("SSH_KEY_PATH", raising=False)
         monkeypatch.delenv("SSH_PRIVATE_KEY", raising=False)
         result = _resolve_ssh_key()
         assert result is None
@@ -148,7 +132,6 @@ class TestLoadRepoPathsLocalMount:
 
 class TestLoadRepoPathsCloneFallback:
     def test_clones_when_local_path_does_not_exist(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("SSH_KEY_PATH", raising=False)
         monkeypatch.delenv("SSH_PRIVATE_KEY", raising=False)
         yaml_path = _write_workspace_yaml(
             tmp_path,
@@ -162,7 +145,6 @@ class TestLoadRepoPathsCloneFallback:
         assert result == [str(cloned_path)]
 
     def test_uses_env_ssh_url_field(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("SSH_KEY_PATH", raising=False)
         monkeypatch.delenv("SSH_PRIVATE_KEY", raising=False)
         yaml_path = _write_workspace_yaml(
             tmp_path,
@@ -185,7 +167,6 @@ class TestLoadRepoPathsCloneFallback:
         assert result == [str(tmp_path)]
 
     def test_skipped_when_clone_fails(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("SSH_KEY_PATH", raising=False)
         monkeypatch.delenv("SSH_PRIVATE_KEY", raising=False)
         yaml_path = _write_workspace_yaml(
             tmp_path,
@@ -197,7 +178,6 @@ class TestLoadRepoPathsCloneFallback:
 
     def test_unset_env_local_path_falls_back_to_clone(self, tmp_path, monkeypatch):
         monkeypatch.delenv("MISSING_VAR", raising=False)
-        monkeypatch.delenv("SSH_KEY_PATH", raising=False)
         monkeypatch.delenv("SSH_PRIVATE_KEY", raising=False)
         yaml_path = _write_workspace_yaml(
             tmp_path,
@@ -212,7 +192,6 @@ class TestLoadRepoPathsCloneFallback:
         """One repo is mounted locally; one must be cloned."""
         local_repo = tmp_path / "local"
         local_repo.mkdir()
-        monkeypatch.delenv("SSH_KEY_PATH", raising=False)
         monkeypatch.delenv("SSH_PRIVATE_KEY", raising=False)
         yaml_path = _write_workspace_yaml(
             tmp_path,
@@ -226,10 +205,7 @@ class TestLoadRepoPathsCloneFallback:
         assert result == [str(local_repo), "/tmp/remote-r"]
 
     def test_ssh_key_passed_to_ensure_cloned(self, tmp_path, monkeypatch):
-        key_file = tmp_path / "id_rsa"
-        key_file.write_text("FAKE KEY")
-        monkeypatch.setenv("SSH_KEY_PATH", str(key_file))
-        monkeypatch.delenv("SSH_PRIVATE_KEY", raising=False)
+        monkeypatch.setenv("SSH_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----\nFAKE\n-----END RSA PRIVATE KEY-----\n")
         yaml_path = _write_workspace_yaml(
             tmp_path,
             [{"id": "r", "github": "git@github.com:org/r.git"}],
@@ -237,4 +213,5 @@ class TestLoadRepoPathsCloneFallback:
         with patch("services.indexer.workspace_resolver._ensure_cloned", return_value="/tmp/r") as mock:
             load_repo_paths(yaml_path)
         _, _, ssh_key_arg = mock.call_args[0]
-        assert ssh_key_arg == str(key_file)
+        assert ssh_key_arg is not None
+        assert Path(ssh_key_arg).exists()
