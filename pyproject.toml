@@ -9,7 +9,10 @@ description = "RAG services for agent context (schema, indexer, MCP server)"
 requires-python = ">=3.11"
 dependencies = [
     "qdrant-client>=1.9.0",
-    "sentence-transformers>=2.7.0",
+    "sentence-transformers>=3.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "mcp>=1.0.0",
 ]
 
 [project.optional-dependencies]

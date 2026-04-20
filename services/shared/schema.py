@@ -36,6 +36,7 @@ class ChunkPayload:
     chunk_index: int
     indexed_at: str
     feature_id: Optional[str] = None
+    content: str = ""
 
     def __post_init__(self) -> None:
         if not self.workspace_id:
@@ -52,7 +53,7 @@ class ChunkPayload:
 
     def to_dict(self) -> dict:
         """Return payload as a plain dict suitable for Qdrant point payload."""
-        return {
+        d = {
             "workspace_id": self.workspace_id,
             "source_type": self.source_type,
             "source_path": self.source_path,
@@ -60,6 +61,9 @@ class ChunkPayload:
             "chunk_index": self.chunk_index,
             "indexed_at": self.indexed_at,
         }
+        if self.content:
+            d["content"] = self.content
+        return d
 
     @classmethod
     def now_iso(cls) -> str:
