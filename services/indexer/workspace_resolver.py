@@ -34,7 +34,7 @@ def load_repo_paths(workspace_yaml_path: str) -> list[str]:
 
     Raises:
         FileNotFoundError: If workspace_yaml_path does not exist.
-        ValueError: If workspace.yaml contains no repos[] or none could be resolved.
+        ValueError: If workspace.yaml contains no repos[] entries.
     """
     path = Path(workspace_yaml_path)
     if not path.exists():
