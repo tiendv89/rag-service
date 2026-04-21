@@ -1,8 +1,8 @@
 """
-Embedding wrapper for sentence-transformers/all-MiniLM-L6-v2.
+Embedding wrapper for BAAI/bge-base-en-v1.5.
 
 Loads the model once and exposes an encode() method. The model produces
-384-dimensional float vectors, matching VECTOR_DIM in services/shared/qdrant_init.py.
+768-dimensional float vectors, matching VECTOR_DIM in services/shared/qdrant_init.py.
 """
 
 import logging
@@ -10,7 +10,7 @@ from typing import Union
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL_NAME = "BAAI/bge-base-en-v1.5"
 
 
 class Embedder:
@@ -25,7 +25,7 @@ class Embedder:
 
     def encode(self, texts: Union[str, list[str]]) -> list[list[float]]:
         """
-        Encode one or more texts to 384-dim float vectors.
+        Encode one or more texts to 768-dim float vectors.
 
         Returns a list of vectors (one per input text).
         """

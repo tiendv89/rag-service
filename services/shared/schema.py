@@ -18,6 +18,8 @@ VALID_SOURCE_TYPES = frozenset({
     "technical_design",
     "readme",
     "claude_md",
+    "doc",
+    "source_code",
 })
 
 

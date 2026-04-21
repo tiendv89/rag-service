@@ -138,6 +138,29 @@ Key points:
 
 ---
 
+## Operator procedures
+
+### Qdrant collection migration (v1 → v2 embedding model upgrade)
+
+The v2 embedding model (`BAAI/bge-base-en-v1.5`, 768-dim) is incompatible with
+the v1 collection (384-dim).  The existing collection must be dropped and
+recreated before deploying the new image.
+
+1. **Stop the indexer** — ensure no writes are in flight.
+2. **Drop the collection** — call the Qdrant REST API:
+   ```bash
+   curl -X DELETE http://<QDRANT_HOST>:6333/collections/<WORKSPACE_ID>
+   ```
+3. **Deploy the new indexer image** — the updated `qdrant_init.py` recreates the
+   collection at 768-dim on startup.
+4. **Wait one poll cycle** — the indexer detects no `_last_commit` file and
+   performs a full re-index.  All content is restored within one cycle.
+
+If the indexer starts against an existing 384-dim collection it will log a clear
+error and exit rather than silently writing mismatched vectors.
+
+---
+
 ## Local development
 
 ```bash

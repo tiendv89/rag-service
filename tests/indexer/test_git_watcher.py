@@ -101,7 +101,7 @@ class TestGitWatcher:
         with patch.object(watcher, "_run") as mock_run:
             mock_run.return_value = _make_result()
             watcher.pull()
-        mock_run.assert_called_once_with(["git", "pull", "--ff-only"])
+        mock_run.assert_called_once_with(["git", "pull", "--ff-only"], use_ssh=True)
 
     def test_pull_failure_does_not_raise(self, tmp_path):
         watcher = GitWatcher(str(tmp_path))

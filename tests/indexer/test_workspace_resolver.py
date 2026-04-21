@@ -13,7 +13,7 @@ import yaml
 from services.indexer.workspace_resolver import (
     _build_git_ssh_command,
     _ensure_cloned,
-    _resolve_ssh_key,
+    resolve_ssh_key as _resolve_ssh_key,
     load_repo_paths,
 )
 

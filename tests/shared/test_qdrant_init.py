@@ -39,7 +39,9 @@ class TestInitCollection:
     def _make_client(self, collection_exists: bool):
         client = MagicMock()
         if collection_exists:
-            client.get_collection.return_value = MagicMock()
+            info = MagicMock()
+            info.config.params.vectors.size = VECTOR_DIM
+            client.get_collection.return_value = info
         else:
             client.get_collection.side_effect = _make_not_found_error()
         return client
@@ -70,12 +72,29 @@ class TestInitCollection:
         with pytest.raises(ValueError, match="workspace_id is required"):
             init_collection(client, "")
 
-    def test_vector_size_is_384(self):
+    def test_vector_size_is_768(self):
         client = self._make_client(collection_exists=False)
         init_collection(client, "workspace")
         call_kwargs = client.create_collection.call_args[1]
         vectors_config = call_kwargs["vectors_config"]
-        assert vectors_config.size == 384
+        assert vectors_config.size == 768
+
+    def test_raises_when_existing_collection_has_wrong_vector_size(self):
+        client = MagicMock()
+        wrong_size_info = MagicMock()
+        wrong_size_info.config.params.vectors.size = 384
+        client.get_collection.return_value = wrong_size_info
+        with pytest.raises(RuntimeError, match="vector_size=384"):
+            init_collection(client, "workspace")
+
+    def test_no_error_when_existing_collection_has_correct_vector_size(self):
+        client = MagicMock()
+        correct_size_info = MagicMock()
+        correct_size_info.config.params.vectors.size = 768
+        client.get_collection.return_value = correct_size_info
+        result = init_collection(client, "workspace")
+        assert result is False
+        client.create_collection.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
