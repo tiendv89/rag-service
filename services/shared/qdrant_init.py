@@ -2,7 +2,7 @@
 Idempotent Qdrant collection initialisation.
 
 Creates a collection keyed by workspace_id if it does not already exist.
-All collections use 384-dimensional vectors (sentence-transformers/all-MiniLM-L6-v2).
+All collections use 768-dimensional vectors (BAAI/bge-base-en-v1.5).
 """
 
 import logging
@@ -16,8 +16,8 @@ from services.shared.schema import build_workspace_filter
 
 logger = logging.getLogger(__name__)
 
-# Vector dimension for sentence-transformers/all-MiniLM-L6-v2
-VECTOR_DIM = 384
+# Vector dimension for BAAI/bge-base-en-v1.5
+VECTOR_DIM = 768
 
 # Default distance metric
 DISTANCE = qdrant_models.Distance.COSINE
@@ -50,9 +50,19 @@ def init_collection(client: QdrantClient, workspace_id: str) -> bool:
     collection = collection_name_for(workspace_id)
 
     try:
-        client.get_collection(collection_name=collection)
+        info = client.get_collection(collection_name=collection)
+        existing_size = info.config.params.vectors.size
+        if existing_size != VECTOR_DIM:
+            raise RuntimeError(
+                f"Collection {collection!r} has vector_size={existing_size} but "
+                f"VECTOR_DIM={VECTOR_DIM}. Drop and recreate the collection before "
+                "deploying: stop indexer → DELETE /collections/{workspace_id} → "
+                "redeploy → re-index."
+            )
         logger.debug("Collection %r already exists — skipping creation", collection)
         return False
+    except RuntimeError:
+        raise
     except Exception as exc:
         # qdrant-client raises UnexpectedResponse (404) when the collection
         # does not exist. Re-raise anything that is not a 404.
