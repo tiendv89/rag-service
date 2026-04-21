@@ -155,3 +155,47 @@ class TestIndexAndRetrieve:
         # Cleanup
         qdrant_client.delete_collection(ws_a)
         qdrant_client.delete_collection(ws_b)
+
+    def test_index_docs_file_and_retrieve(self, tmp_path, workspace_id, qdrant_client, embedder):
+        """Index a docs/ markdown file and verify it is retrievable as source_type=doc."""
+        from services.indexer.main import index_repo
+        from services.indexer.git_watcher import GitWatcher
+        from services.shared.qdrant_init import init_collection, query_points
+
+        # Set up a docs/architecture overview file
+        docs_dir = tmp_path / "docs" / "architecture"
+        docs_dir.mkdir(parents=True)
+        content = "# Architecture Overview\n\nThis document describes the overall system architecture and component interactions."
+        (docs_dir / "overview.md").write_text(content, encoding="utf-8")
+
+        init_collection(qdrant_client, workspace_id)
+
+        watcher = MagicMock(spec=GitWatcher)
+        watcher.changed_files.return_value = ["docs/architecture/overview.md"]
+
+        count = index_repo(
+            repo_path=str(tmp_path),
+            watcher=watcher,
+            embedder=embedder,
+            client=qdrant_client,
+            workspace_id=workspace_id,
+        )
+
+        assert count >= 1, "Expected at least 1 point to be upserted"
+
+        query_vector = embedder.encode("architecture overview")[0]
+        results = query_points(
+            qdrant_client,
+            workspace_id=workspace_id,
+            query_vector=query_vector,
+            top_k=5,
+        )
+
+        assert len(results) >= 1
+        payload = results[0]["payload"]
+        assert payload["workspace_id"] == workspace_id
+        assert payload["source_type"] == "doc"
+        assert "docs/architecture/overview.md" in payload["source_path"]
+
+        # Cleanup
+        qdrant_client.delete_collection(workspace_id)

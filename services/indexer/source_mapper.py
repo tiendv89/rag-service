@@ -7,6 +7,8 @@ Supported mappings (from technical design):
   workflow/technical_skills/*/SKILL.md  → skill
   docs/features/*/product-spec.md       → product_spec
   docs/features/*/technical-design.md   → technical_design
+  docs/features/*/tasks.md              → excluded (machine-generated, redundant)
+  docs/**/*.md (other)                  → doc
   agents/<id>/log.jsonl                 → task_log
   CLAUDE.md, CLAUDE.shared.md           → claude_md
   README.md (top-level per repo)        → readme
@@ -20,14 +22,18 @@ from typing import Optional
 
 # Pattern → (source_type, feature_id_group or None)
 # Patterns are matched against the path relative to the repo root.
+# Order matters: more-specific patterns must precede broader ones.
 _PATTERNS: list[tuple[re.Pattern, str, Optional[int]]] = [
     # workflow skills
     (re.compile(r"^workflow/workflow_skills/[^/]+/SKILL\.md$"), "skill", None),
     (re.compile(r"^workflow/technical_skills/[^/]+/SKILL\.md$"), "skill", None),
-    # feature docs — capture feature_id
+    # feature docs — explicit matches must appear before the generic doc pattern
     (re.compile(r"^docs/features/([^/]+)/product-spec\.md$"), "product_spec", 1),
     (re.compile(r"^docs/features/([^/]+)/technical-design\.md$"), "technical_design", 1),
-    # task logs — capture agent id (no feature_id association)
+    # docs folder — all .md files under docs/ not already matched above.
+    # Captures feature_id from docs/features/<id>/... paths; None for all other docs paths.
+    (re.compile(r"^docs/(?:features/([^/]+)/)?.*\.md$"), "doc", 1),
+    # task logs — no feature_id association
     (re.compile(r"^agents/[^/]+/log\.jsonl$"), "task_log", None),
     # claude_md files at root or any level
     (re.compile(r"(?:^|/)CLAUDE(?:\.shared)?\.md$"), "claude_md", None),
@@ -42,6 +48,8 @@ _EXCLUDE_PATTERNS: list[re.Pattern] = [
     re.compile(r"(^|/)\.env($|\.)"),
     re.compile(r"\.pyc$"),
     re.compile(r"\.(png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|pdf|zip|tar|gz|bin|exe)$"),
+    # Machine-generated planning docs — content covered by task YAML task_log entries
+    re.compile(r"^docs/features/[^/]+/tasks\.md$"),
 ]
 
 

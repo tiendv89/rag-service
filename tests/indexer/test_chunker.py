@@ -99,10 +99,18 @@ class TestChunkDocument:
         chunks = chunk_document(source_type, "   ")
         assert chunks == []
 
-    @pytest.mark.parametrize("source_type", ["product_spec", "technical_design", "readme"])
+    @pytest.mark.parametrize("source_type", ["product_spec", "technical_design", "readme", "doc"])
     def test_sliding_window_types_return_at_least_one_chunk(self, source_type):
         chunks = chunk_document(source_type, "Some content here.")
         assert len(chunks) >= 1
+
+    def test_doc_returns_non_empty_list_of_strings(self):
+        markdown = "# Architecture Overview\n\nThis document describes the overall architecture.\n\n## Components\n\nThe system has three main components."
+        chunks = chunk_document("doc", markdown)
+        assert len(chunks) >= 1
+        for chunk in chunks:
+            assert isinstance(chunk, str)
+            assert chunk.strip()
 
     def test_task_log_returns_one_chunk_per_entry(self):
         entry1 = json.dumps({"action": "started"})

@@ -81,9 +81,10 @@ def chunk_document(source_type: str, content: str) -> list[str]:
 
     Returns a list of string chunks. Each chunk will become one Qdrant point.
 
-    - skill, claude_md:  single-element list (whole file)
-    - product_spec, technical_design, readme: sliding-window chunks
-    - task_log:          one element per valid JSONL line
+    - skill, claude_md:                        single-element list (whole file)
+    - product_spec, technical_design, readme,
+      doc:                                     sliding-window chunks (512 tok / 50 overlap)
+    - task_log:                                one element per valid JSONL line
 
     Raises ValueError for unknown source_types.
     """
@@ -91,7 +92,7 @@ def chunk_document(source_type: str, content: str) -> list[str]:
         text = content.strip()
         return [text] if text else []
 
-    if source_type in ("product_spec", "technical_design", "readme"):
+    if source_type in ("product_spec", "technical_design", "readme", "doc"):
         return _sliding_window_chunks(content)
 
     if source_type == "task_log":

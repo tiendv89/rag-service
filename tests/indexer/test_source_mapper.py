@@ -80,14 +80,43 @@ class TestClassifyPath:
         assert classify_path("assets/logo.jpg") is None
 
     # ------------------------------------------------------------------
+    # Doc paths — inclusion
+    # ------------------------------------------------------------------
+    def test_docs_non_feature_path_is_doc(self):
+        result = classify_path("docs/architecture/overview.md")
+        assert result == ("doc", None)
+
+    def test_docs_top_level_file_is_doc(self):
+        result = classify_path("docs/random-notes.md")
+        assert result == ("doc", None)
+
+    def test_docs_feature_guide_is_doc_with_feature_id(self):
+        result = classify_path("docs/features/my-feat/guide.md")
+        assert result == ("doc", "my-feat")
+
+    def test_docs_feature_nested_is_doc_with_feature_id(self):
+        result = classify_path("docs/features/agent-rag-v2/adr/001-chunking.md")
+        assert result == ("doc", "agent-rag-v2")
+
+    # ------------------------------------------------------------------
+    # Doc paths — exclusion (already covered by specific source types or excluded)
+    # ------------------------------------------------------------------
+    def test_docs_product_spec_is_not_doc(self):
+        result = classify_path("docs/features/x/product-spec.md")
+        assert result == ("product_spec", "x")
+
+    def test_docs_technical_design_is_not_doc(self):
+        result = classify_path("docs/features/x/technical-design.md")
+        assert result == ("technical_design", "x")
+
+    def test_docs_tasks_md_not_indexed(self):
+        assert classify_path("docs/features/x/tasks.md") is None
+
+    # ------------------------------------------------------------------
     # Unmatched paths return None
     # ------------------------------------------------------------------
     def test_source_code_not_indexed(self):
         assert classify_path("services/shared/schema.py") is None
-
-    def test_unknown_markdown_not_indexed(self):
-        # Only specific MD files are indexed
-        assert classify_path("docs/random-notes.md") is None
 
     def test_nested_readme_not_indexed(self):
         # Only top-level README.md is indexed
