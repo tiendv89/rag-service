@@ -130,7 +130,7 @@ def index_repo(
             logger.warning("Cannot read %s: %s", abs_path, exc)
             continue
 
-        chunks = chunk_document(source_type, content)
+        chunks = chunk_document(source_type, content, source_path=rel_path)
         if not chunks:
             logger.debug("No chunks produced for %s", rel_path)
             continue
