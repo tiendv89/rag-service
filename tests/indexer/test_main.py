@@ -103,10 +103,31 @@ class TestIndexRepo:
         assert points[0].payload["source_type"] == "skill"
 
     def test_skips_unclassified_file(self, tmp_path):
-        # Create a source code file that should not be indexed
+        # A truly unclassified file (e.g. .yaml config) should not be indexed
         src = tmp_path / "services" / "shared"
         src.mkdir(parents=True)
-        (src / "schema.py").write_text("class Foo: pass", encoding="utf-8")
+        (src / "config.yaml").write_text("key: value", encoding="utf-8")
+
+        watcher = MagicMock(spec=GitWatcher)
+        watcher.changed_files.return_value = ["services/shared/config.yaml"]
+        client = MagicMock()
+
+        result = index_repo(
+            repo_path=str(tmp_path),
+            watcher=watcher,
+            embedder=self._make_embedder(),
+            client=client,
+            workspace_id="workspace",
+        )
+
+        assert result == 0
+        client.upsert.assert_not_called()
+
+    def test_indexes_python_source_file(self, tmp_path):
+        # Python source files are now indexed as source_code
+        src = tmp_path / "services" / "shared"
+        src.mkdir(parents=True)
+        (src / "schema.py").write_text("class Foo:\n    def bar(self):\n        pass\n", encoding="utf-8")
 
         watcher = MagicMock(spec=GitWatcher)
         watcher.changed_files.return_value = ["services/shared/schema.py"]
@@ -120,8 +141,8 @@ class TestIndexRepo:
             workspace_id="workspace",
         )
 
-        assert result == 0
-        client.upsert.assert_not_called()
+        assert result >= 1
+        client.upsert.assert_called()
 
     def test_skips_deleted_file(self, tmp_path):
         # Report a changed file that doesn't exist on disk

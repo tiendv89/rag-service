@@ -12,8 +12,10 @@ Supported mappings (from technical design):
   agents/<id>/log.jsonl                 → task_log
   CLAUDE.md, CLAUDE.shared.md           → claude_md
   README.md (top-level per repo)        → readme
+  **/*.py, **/*.ts, **/*.tsx, **/*.js,
+  **/*.go (excl. build dirs)            → source_code
 
-Not indexed: source code, node_modules, vendor/, binaries, .env files.
+Not indexed: node_modules, vendor/, binaries, .env files, build artifacts.
 """
 
 import os
@@ -39,6 +41,8 @@ _PATTERNS: list[tuple[re.Pattern, str, Optional[int]]] = [
     (re.compile(r"(?:^|/)CLAUDE(?:\.shared)?\.md$"), "claude_md", None),
     # top-level README per repo
     (re.compile(r"^README\.md$"), "readme", None),
+    # source code files
+    (re.compile(r"\.(py|ts|tsx|js|go)$"), "source_code", None),
 ]
 
 # Paths that must never be indexed
@@ -50,6 +54,13 @@ _EXCLUDE_PATTERNS: list[re.Pattern] = [
     re.compile(r"\.(png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|pdf|zip|tar|gz|bin|exe)$"),
     # Machine-generated planning docs — content covered by task YAML task_log entries
     re.compile(r"^docs/features/[^/]+/tasks\.md$"),
+    # build and generated artifact directories
+    re.compile(r"(^|/)__pycache__(/|$)"),
+    re.compile(r"(^|/)dist(/|$)"),
+    re.compile(r"(^|/)build(/|$)"),
+    re.compile(r"(^|/)\.next(/|$)"),
+    re.compile(r"(^|/)out(/|$)"),
+    re.compile(r"(^|/)migrations(/|$)"),
 ]
 
 
