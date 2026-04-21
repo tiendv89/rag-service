@@ -41,7 +41,7 @@ def _build_git_ssh_command(ssh_key_path: str) -> str:
     )
 
 
-def _resolve_ssh_key() -> str | None:
+def resolve_ssh_key() -> str | None:
     """
     Return the path to a usable SSH private key, or None if unavailable.
 
@@ -51,6 +51,8 @@ def _resolve_ssh_key() -> str | None:
     """
     raw_key = os.environ.get("SSH_PRIVATE_KEY", "")
     if raw_key:
+        # Normalize literal \n (from Docker Compose env_file / YAML interpolation)
+        raw_key = raw_key.replace("\\n", "\n")
         tmp = tempfile.NamedTemporaryFile(
             prefix="indexer_ssh_key_",
             mode="w",
@@ -119,7 +121,7 @@ def _ensure_cloned(repo_id: str, ssh_url: str, ssh_key_path: str | None) -> str 
 # Public API
 # ---------------------------------------------------------------------------
 
-def load_repo_paths(workspace_yaml_path: str) -> list[str]:
+def load_repo_paths(workspace_yaml_path: str, ssh_key_path: str | None = None) -> list[str]:
     """
     Parse workspace.yaml and return resolved local paths for all repos.
 
@@ -152,7 +154,8 @@ def load_repo_paths(workspace_yaml_path: str) -> list[str]:
     if not repos:
         raise ValueError(f"workspace.yaml at {workspace_yaml_path} has no repos[] entries")
 
-    ssh_key_path = _resolve_ssh_key()
+    if ssh_key_path is None:
+        ssh_key_path = resolve_ssh_key()
     resolved: list[str] = []
 
     for repo in repos:

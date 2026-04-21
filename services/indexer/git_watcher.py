@@ -7,6 +7,7 @@ file is treated as changed so a full initial index is performed.
 """
 
 import logging
+import os
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -20,14 +21,15 @@ class GitWatcher:
 
     Usage::
 
-        watcher = GitWatcher(repo_path="/path/to/repo")
+        watcher = GitWatcher(repo_path="/path/to/repo", ssh_key_path="/home/agent/.ssh/id_rsa")
         changed = watcher.changed_files()  # returns list[str] of rel paths
         watcher.advance()                   # record current HEAD as last_seen
     """
 
-    def __init__(self, repo_path: str) -> None:
+    def __init__(self, repo_path: str, ssh_key_path: Optional[str] = None) -> None:
         self._repo = Path(repo_path).resolve()
         self._last_commit: Optional[str] = None
+        self._ssh_key_path = ssh_key_path
 
     # ------------------------------------------------------------------
     # Public API
@@ -40,7 +42,7 @@ class GitWatcher:
         Failures are logged as warnings but do not raise — the indexer
         continues with the locally available state.
         """
-        result = self._run(["git", "pull", "--ff-only"])
+        result = self._run(["git", "pull", "--ff-only"], use_ssh=True)
         if result.returncode != 0:
             logger.warning(
                 "git pull failed in %s (exit %d): %s",
@@ -106,10 +108,18 @@ class GitWatcher:
             return []
         return [line for line in result.stdout.splitlines() if line.strip()]
 
-    def _run(self, cmd: list[str]) -> subprocess.CompletedProcess:
+    def _run(self, cmd: list[str], use_ssh: bool = False) -> subprocess.CompletedProcess:
+        env = os.environ.copy()
+        if use_ssh and self._ssh_key_path:
+            env["GIT_SSH_COMMAND"] = (
+                f"ssh -i {self._ssh_key_path} "
+                "-o StrictHostKeyChecking=no "
+                "-o UserKnownHostsFile=/dev/null"
+            )
         return subprocess.run(
             cmd,
             cwd=self._repo,
+            env=env,
             capture_output=True,
             text=True,
         )

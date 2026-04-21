@@ -46,7 +46,7 @@ from services.indexer.chunker import chunk_document
 from services.indexer.embedder import Embedder
 from services.indexer.git_watcher import GitWatcher
 from services.indexer.source_mapper import classify_path
-from services.indexer.workspace_resolver import load_repo_paths
+from services.indexer.workspace_resolver import load_repo_paths, resolve_ssh_key
 from services.shared.qdrant_init import init_collection, upsert_points
 from services.shared.schema import ChunkPayload
 
@@ -186,6 +186,7 @@ def run(
     repo_paths: list[str],
     poll_interval: int = 300,
     embedder: Optional[Embedder] = None,
+    ssh_key_path: Optional[str] = None,
 ) -> None:
     """
     Run the indexer polling loop.
@@ -206,7 +207,7 @@ def run(
     if embedder is None:
         embedder = Embedder()
 
-    watchers = {rp: GitWatcher(rp) for rp in repo_paths}
+    watchers = {rp: GitWatcher(rp, ssh_key_path=ssh_key_path) for rp in repo_paths}
 
     while not _SHUTDOWN:
         cycle_start = time.monotonic()
@@ -251,7 +252,8 @@ def main() -> None:
             "WORKSPACE_YAML_PATH must be set — path to the mounted workspace.yaml"
         )
 
-    repo_paths = load_repo_paths(workspace_yaml_path)
+    ssh_key_path = resolve_ssh_key()
+    repo_paths = load_repo_paths(workspace_yaml_path, ssh_key_path=ssh_key_path)
     if not repo_paths:
         raise ValueError(
             f"No repo paths resolved from {workspace_yaml_path} — "
@@ -265,6 +267,7 @@ def main() -> None:
         workspace_id=workspace_id,
         repo_paths=repo_paths,
         poll_interval=poll_interval,
+        ssh_key_path=ssh_key_path,
     )
 
 
