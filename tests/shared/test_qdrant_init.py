@@ -205,10 +205,10 @@ class TestQueryPoints:
 
     def test_workspace_id_filter_applied(self):
         client = MagicMock()
-        client.search.return_value = []
+        client.query_points.return_value = MagicMock(points=[])
         query_points(client, "workspace", [0.1] * VECTOR_DIM)
-        assert client.search.called
-        search_kwargs = client.search.call_args[1]
+        assert client.query_points.called
+        search_kwargs = client.query_points.call_args[1]
         # A query_filter must be present and non-None
         assert search_kwargs.get("query_filter") is not None
         # The filter must encode workspace_id; inspect via model_dump (Pydantic v2)
@@ -224,7 +224,7 @@ class TestQueryPoints:
 
     def test_returns_mapped_results(self):
         client = MagicMock()
-        client.search.return_value = [self._make_hit(0.95)]
+        client.query_points.return_value = MagicMock(points=[self._make_hit(0.95)])
         results = query_points(client, "workspace", [0.1] * VECTOR_DIM)
         assert len(results) == 1
         assert results[0]["score"] == 0.95
@@ -233,23 +233,23 @@ class TestQueryPoints:
 
     def test_default_top_k_is_5(self):
         client = MagicMock()
-        client.search.return_value = []
+        client.query_points.return_value = MagicMock(points=[])
         query_points(client, "workspace", [0.1] * VECTOR_DIM)
-        search_kwargs = client.search.call_args[1]
+        search_kwargs = client.query_points.call_args[1]
         assert search_kwargs["limit"] == 5
 
     def test_custom_top_k(self):
         client = MagicMock()
-        client.search.return_value = []
+        client.query_points.return_value = MagicMock(points=[])
         query_points(client, "workspace", [0.1] * VECTOR_DIM, top_k=10)
-        search_kwargs = client.search.call_args[1]
+        search_kwargs = client.query_points.call_args[1]
         assert search_kwargs["limit"] == 10
 
     def test_uses_correct_collection(self):
         client = MagicMock()
-        client.search.return_value = []
+        client.query_points.return_value = MagicMock(points=[])
         query_points(client, "faro", [0.1] * VECTOR_DIM)
-        search_kwargs = client.search.call_args[1]
+        search_kwargs = client.query_points.call_args[1]
         assert search_kwargs["collection_name"] == "faro"
 
 

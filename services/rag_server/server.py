@@ -42,7 +42,7 @@ _state: dict = {
 # FastMCP server definition
 # ---------------------------------------------------------------------------
 
-mcp_server = FastMCP("rag-server")
+mcp_server = FastMCP("rag-server", host="0.0.0.0")
 
 
 @mcp_server.tool()

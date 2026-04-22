@@ -169,9 +169,9 @@ def query_points(
 
     collection = collection_name_for(workspace_id)
 
-    results = client.search(
+    results = client.query_points(
         collection_name=collection,
-        query_vector=query_vector,
+        query=query_vector,
         limit=top_k,
         query_filter=qdrant_models.Filter(**workspace_filter),
         with_payload=True,
@@ -183,7 +183,7 @@ def query_points(
             "score": hit.score,
             "payload": hit.payload,
         }
-        for hit in results
+        for hit in results.points
     ]
 
 
