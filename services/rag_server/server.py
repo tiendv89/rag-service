@@ -2,6 +2,7 @@
 RAG MCP server — FastAPI service implementing the MCP protocol over HTTP/SSE.
 
 Exposes one MCP tool: ``rag_query``.
+Also exposes a plain HTTP endpoint: ``POST /query``.
 
 Environment variables:
   QDRANT_URL              URL of the Qdrant instance (default: http://localhost:6333)
@@ -18,6 +19,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -37,6 +39,77 @@ _state: dict = {
     "client": None,   # QdrantClient | None
     "embedder": None, # Embedder | None
 }
+
+# ---------------------------------------------------------------------------
+# Pydantic models for the REST /query endpoint
+# ---------------------------------------------------------------------------
+
+
+class QueryRequest(BaseModel):
+    query: str
+    workspace_id: str
+    top_k: int = 5
+    source_types: Optional[list[str]] = None
+
+
+class QueryResultItem(BaseModel):
+    content: str
+    score: float
+    metadata: dict
+
+
+class QueryResponse(BaseModel):
+    results: list[QueryResultItem]
+
+
+# ---------------------------------------------------------------------------
+# Internal retrieval function (shared by MCP tool and REST endpoint)
+# ---------------------------------------------------------------------------
+
+
+async def _rag_query(
+    query: str,
+    workspace_id: str,
+    top_k: int = 5,
+    source_types: Optional[list[str]] = None,
+) -> list[dict]:
+    """Core retrieval logic: embed query, search Qdrant, return ranked chunks."""
+    if not workspace_id:
+        raise ValueError(
+            "workspace_id is required — queries without workspace_id are rejected"
+        )
+
+    client: Optional[QdrantClient] = _state["client"]
+    embedder: Optional[Embedder] = _state["embedder"]
+
+    if client is None:
+        raise RuntimeError(
+            "Qdrant is not available — check QDRANT_URL and ensure Qdrant is running"
+        )
+    if embedder is None:
+        raise RuntimeError("Embedding model is not initialised")
+
+    query_vector = embedder.encode(query)[0]
+
+    results = query_points(
+        client=client,
+        workspace_id=workspace_id,
+        query_vector=query_vector,
+        top_k=top_k,
+        source_types=source_types,
+    )
+
+    return [
+        {
+            "content": hit["payload"].get("content", ""),
+            "source_path": hit["payload"].get("source_path", ""),
+            "source_type": hit["payload"].get("source_type", ""),
+            "feature_id": hit["payload"].get("feature_id"),
+            "score": hit["score"],
+        }
+        for hit in results
+    ]
+
 
 # ---------------------------------------------------------------------------
 # FastMCP server definition
@@ -71,42 +144,7 @@ async def rag_query(
             feature_id  — feature scope (null for workspace-wide documents)
             score       — cosine similarity score in [0, 1]
     """
-    if not workspace_id:
-        raise ValueError(
-            "workspace_id is required — queries without workspace_id are rejected"
-        )
-
-    client: Optional[QdrantClient] = _state["client"]
-    embedder: Optional[Embedder] = _state["embedder"]
-
-    if client is None:
-        raise RuntimeError(
-            "Qdrant is not available — check QDRANT_URL and ensure Qdrant is running"
-        )
-    if embedder is None:
-        raise RuntimeError("Embedding model is not initialised")
-
-    # Embed the query and search Qdrant
-    query_vector = embedder.encode(query)[0]
-
-    results = query_points(
-        client=client,
-        workspace_id=workspace_id,
-        query_vector=query_vector,
-        top_k=top_k,
-        source_types=source_types,
-    )
-
-    return [
-        {
-            "content": hit["payload"].get("content", ""),
-            "source_path": hit["payload"].get("source_path", ""),
-            "source_type": hit["payload"].get("source_type", ""),
-            "feature_id": hit["payload"].get("feature_id"),
-            "score": hit["score"],
-        }
-        for hit in results
-    ]
+    return await _rag_query(query, workspace_id, top_k, source_types)
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +158,7 @@ def create_app(
 ) -> Starlette:
     """
     Create and return the Starlette application that serves the MCP server over
-    HTTP/SSE.
+    HTTP/SSE and the plain HTTP POST /query endpoint.
 
     This factory is the canonical way to build the app — uvicorn should receive
     the return value of ``create_app()``, not a bare Starlette instance.
@@ -129,8 +167,8 @@ def create_app(
     - The sentence-transformers embedding model is loaded unconditionally.
     - Qdrant connection is attempted ``startup_retries`` times with exponential
       back-off.  If Qdrant is still unreachable after all retries, the server
-      starts anyway (graceful degradation) and ``rag_query`` will return a clear
-      error until Qdrant becomes available.
+      starts anyway (graceful degradation) and ``rag_query`` calls will
+      fail until Qdrant becomes available.
 
     Args:
         qdrant_url: Override QDRANT_URL env var (mainly for testing).
@@ -201,9 +239,50 @@ def create_app(
             status_code=200,
         )
 
+    async def query_endpoint(request: Request) -> JSONResponse:
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=422)
+
+        try:
+            req = QueryRequest(**body)
+        except Exception as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
+
+        try:
+            hits = await _rag_query(
+                query=req.query,
+                workspace_id=req.workspace_id,
+                top_k=req.top_k,
+                source_types=req.source_types,
+            )
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
+        except Exception as exc:
+            logger.error("Query endpoint error: %s", exc)
+            return JSONResponse({"error": str(exc)}, status_code=500)
+
+        results = [
+            {
+                "content": hit["content"],
+                "score": hit["score"],
+                "metadata": {
+                    "source_type": hit["source_type"],
+                    "repo": None,
+                    "file_path": hit["source_path"],
+                    "feature_id": hit["feature_id"],
+                },
+            }
+            for hit in hits
+        ]
+
+        return JSONResponse({"results": results})
+
     return Starlette(
         routes=[
             Route("/health", health),
+            Route("/query", query_endpoint, methods=["POST"]),
             Mount("/", app=mcp_server.sse_app()),
         ],
         lifespan=lifespan,
