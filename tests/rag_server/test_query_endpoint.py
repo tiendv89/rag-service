@@ -7,11 +7,10 @@ validation, response shaping, and error handling via mocks.
 Integration tests require Qdrant and are auto-skipped when unavailable.
 """
 
-import asyncio
 import uuid
 import os
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
 
 from starlette.testclient import TestClient
 
