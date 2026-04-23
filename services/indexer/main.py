@@ -146,6 +146,7 @@ def index_repo(
                 chunk_index=chunk_index,
                 indexed_at=indexed_at,
                 feature_id=feature_id,
+                content=chunk_text,
             )
 
             points.append(
