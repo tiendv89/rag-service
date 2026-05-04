@@ -173,6 +173,24 @@ class TestUpsertPoints:
         call_kwargs = client.upsert.call_args[1]
         assert call_kwargs["collection_name"] == "faro"
 
+    def test_upsert_batches_large_point_lists(self):
+        client = MagicMock()
+        points = self._make_valid_points(count=250)
+        upsert_points(client, "workspace", points, batch_size=100)
+        assert client.upsert.call_count == 3
+        sent = [len(call.kwargs["points"]) for call in client.upsert.call_args_list]
+        assert sent == [100, 100, 50]
+
+    def test_upsert_invalid_batch_size_raises(self):
+        client = MagicMock()
+        with pytest.raises(ValueError, match="batch_size must be >= 1"):
+            upsert_points(client, "workspace", [], batch_size=0)
+
+    def test_upsert_empty_points_makes_no_calls(self):
+        client = MagicMock()
+        upsert_points(client, "workspace", [])
+        client.upsert.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # query_points
@@ -251,6 +269,23 @@ class TestQueryPoints:
         query_points(client, "faro", [0.1] * VECTOR_DIM)
         search_kwargs = client.query_points.call_args[1]
         assert search_kwargs["collection_name"] == "faro"
+
+    def test_returns_empty_when_collection_missing(self):
+        client = MagicMock()
+        client.query_points.side_effect = _make_not_found_error()
+        results = query_points(client, "unknown-workspace", [0.1] * VECTOR_DIM)
+        assert results == []
+
+    def test_propagates_non_404_errors(self):
+        client = MagicMock()
+        client.query_points.side_effect = UnexpectedResponse(
+            status_code=500,
+            reason_phrase="Internal Server Error",
+            content=b"",
+            headers={},
+        )
+        with pytest.raises(UnexpectedResponse):
+            query_points(client, "workspace", [0.1] * VECTOR_DIM)
 
 
 # ---------------------------------------------------------------------------
