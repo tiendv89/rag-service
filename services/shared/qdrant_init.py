@@ -88,10 +88,14 @@ def init_collection(client: QdrantClient, workspace_id: str) -> bool:
     return True
 
 
+UPSERT_BATCH_SIZE = 100
+
+
 def upsert_points(
     client: QdrantClient,
     workspace_id: str,
     points: list[dict],
+    batch_size: int = UPSERT_BATCH_SIZE,
 ) -> None:
     """
     Upsert a list of points into the workspace collection.
@@ -101,11 +105,17 @@ def upsert_points(
         vector   — list[float] of length VECTOR_DIM
         payload  — dict produced by ChunkPayload.to_dict()
 
-    Raises ValueError if workspace_id is missing or empty, or if any point's
-    payload is missing workspace_id.
+    Points are sent to Qdrant in chunks of `batch_size` to keep individual
+    HTTP requests small enough to avoid write timeouts on large repos.
+
+    Raises ValueError if workspace_id is missing or empty, if any point's
+    payload is missing workspace_id, or if batch_size < 1.
     """
     if not workspace_id:
         raise ValueError("workspace_id is required for all upserts")
+
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be >= 1, got {batch_size}")
 
     for i, point in enumerate(points):
         payload = point.get("payload", {})
@@ -126,11 +136,20 @@ def upsert_points(
         for p in points
     ]
 
-    client.upsert(
-        collection_name=collection,
-        points=qdrant_points,
-    )
-    logger.debug("Upserted %d point(s) to collection %r", len(qdrant_points), collection)
+    for start in range(0, len(qdrant_points), batch_size):
+        batch = qdrant_points[start : start + batch_size]
+        client.upsert(
+            collection_name=collection,
+            points=batch,
+        )
+        logger.debug(
+            "Upserted %d point(s) to collection %r (batch %d-%d of %d)",
+            len(batch),
+            collection,
+            start,
+            start + len(batch),
+            len(qdrant_points),
+        )
 
 
 def query_points(
@@ -169,13 +188,18 @@ def query_points(
 
     collection = collection_name_for(workspace_id)
 
-    results = client.query_points(
-        collection_name=collection,
-        query=query_vector,
-        limit=top_k,
-        query_filter=qdrant_models.Filter(**workspace_filter),
-        with_payload=True,
-    )
+    try:
+        results = client.query_points(
+            collection_name=collection,
+            query=query_vector,
+            limit=top_k,
+            query_filter=qdrant_models.Filter(**workspace_filter),
+            with_payload=True,
+        )
+    except Exception as exc:
+        if _is_not_found(exc):
+            return []
+        raise
 
     return [
         {
