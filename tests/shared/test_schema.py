@@ -95,16 +95,6 @@ class TestChunkPayload:
         )
         assert p.source_type == "doc"
 
-    def test_source_code_source_type_valid(self):
-        p = ChunkPayload(
-            workspace_id="workspace",
-            source_type="source_code",
-            source_path="services/indexer/chunker.py",
-            chunk_index=0,
-            indexed_at="2026-04-19T00:00:00+00:00",
-        )
-        assert p.source_type == "source_code"
-
     @pytest.mark.parametrize("source_type", ["skill", "task_log", "product_spec", "technical_design", "readme", "claude_md"])
     def test_legacy_source_types_still_valid(self, source_type):
         p = ChunkPayload(

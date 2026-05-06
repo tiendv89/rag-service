@@ -123,8 +123,8 @@ class TestIndexRepo:
         assert result == 0
         client.upsert.assert_not_called()
 
-    def test_indexes_python_source_file(self, tmp_path):
-        # Python source files are now indexed as source_code
+    def test_skips_python_source_file(self, tmp_path):
+        # Python source files are NOT indexed — code queries handled by GitNexus
         src = tmp_path / "services" / "shared"
         src.mkdir(parents=True)
         (src / "schema.py").write_text("class Foo:\n    def bar(self):\n        pass\n", encoding="utf-8")
@@ -141,8 +141,8 @@ class TestIndexRepo:
             workspace_id="workspace",
         )
 
-        assert result >= 1
-        client.upsert.assert_called()
+        assert result == 0
+        client.upsert.assert_not_called()
 
     def test_skips_deleted_file(self, tmp_path):
         # Report a changed file that doesn't exist on disk
