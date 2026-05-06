@@ -115,7 +115,7 @@ async def _rag_query(
 # FastMCP server definition
 # ---------------------------------------------------------------------------
 
-mcp_server = FastMCP("rag-server", stateless_http=True)
+mcp_server = FastMCP("rag-server", host="0.0.0.0")
 
 
 @mcp_server.tool()
@@ -283,7 +283,7 @@ def create_app(
         routes=[
             Route("/health", health),
             Route("/query", query_endpoint, methods=["POST"]),
-            Mount("/", app=mcp_server.streamable_http_app()),
+            Mount("/", app=mcp_server.sse_app()),
         ],
         lifespan=lifespan,
     )
