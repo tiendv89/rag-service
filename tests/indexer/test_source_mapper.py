@@ -113,57 +113,22 @@ class TestClassifyPath:
         assert classify_path("docs/features/x/tasks.md") is None
 
     # ------------------------------------------------------------------
-    # Source code inclusion
+    # Source code files are NOT indexed (handled by GitNexus)
     # ------------------------------------------------------------------
-    def test_python_file_indexed(self):
-        assert classify_path("services/shared/schema.py") == ("source_code", None)
+    def test_python_file_not_indexed(self):
+        assert classify_path("services/shared/schema.py") is None
 
-    def test_typescript_file_indexed(self):
-        assert classify_path("src/components/Button.ts") == ("source_code", None)
+    def test_typescript_file_not_indexed(self):
+        assert classify_path("src/components/Button.ts") is None
 
-    def test_tsx_file_indexed(self):
-        assert classify_path("src/pages/Index.tsx") == ("source_code", None)
+    def test_tsx_file_not_indexed(self):
+        assert classify_path("src/pages/Index.tsx") is None
 
-    def test_js_file_indexed(self):
-        assert classify_path("scripts/deploy.js") == ("source_code", None)
+    def test_js_file_not_indexed(self):
+        assert classify_path("scripts/deploy.js") is None
 
-    def test_go_file_indexed(self):
-        assert classify_path("cmd/server/main.go") == ("source_code", None)
-
-    def test_test_file_included(self):
-        # Test files are explicitly included — they document real usage patterns
-        assert classify_path("services/auth.test.ts") == ("source_code", None)
-
-    def test_spec_file_included(self):
-        assert classify_path("tests/auth.spec.ts") == ("source_code", None)
-
-    def test_python_test_file_included(self):
-        assert classify_path("tests/test_auth.py") == ("source_code", None)
-
-    # ------------------------------------------------------------------
-    # Source code exclusions
-    # ------------------------------------------------------------------
-    def test_node_modules_ts_excluded(self):
-        assert classify_path("node_modules/foo.ts") is None
-
-    def test_pycache_excluded(self):
-        assert classify_path("services/__pycache__/schema.cpython-311.pyc") is None
-        assert classify_path("__pycache__/module.py") is None
-
-    def test_dist_excluded(self):
-        assert classify_path("dist/bundle.js") is None
-
-    def test_build_excluded(self):
-        assert classify_path("build/output.js") is None
-
-    def test_next_excluded(self):
-        assert classify_path(".next/server/pages/index.js") is None
-
-    def test_out_excluded(self):
-        assert classify_path("out/static/chunk.js") is None
-
-    def test_migrations_excluded(self):
-        assert classify_path("migrations/001_init.py") is None
+    def test_go_file_not_indexed(self):
+        assert classify_path("cmd/server/main.go") is None
 
     # ------------------------------------------------------------------
     # Unmatched paths return None

@@ -9,7 +9,6 @@ from services.indexer.chunker import (
     chunk_document,
     _sliding_window_chunks,
     _chunk_task_log,
-    _ast_chunk_source,
 )
 
 
@@ -120,17 +119,9 @@ class TestChunkDocument:
         chunks = chunk_document("task_log", content)
         assert len(chunks) == 2
 
-    def test_source_code_returns_chunks(self):
-        content = "def hello():\n    return 42\n"
-        chunks = chunk_document("source_code", content, source_path="hello.py")
-        assert len(chunks) >= 1
-
-    def test_source_code_unknown_extension_falls_back_to_sliding_window(self):
-        content = "some code content " * 10
-        chunks = chunk_document("source_code", content, source_path="file.rb")
-        assert len(chunks) >= 1
-        for c in chunks:
-            assert isinstance(c, str)
+    def test_source_code_raises_unknown_source_type(self):
+        with pytest.raises(ValueError, match="Unknown source_type"):
+            chunk_document("source_code", "def foo(): pass", source_path="foo.py")
 
     def test_unknown_source_type_raises(self):
         with pytest.raises(ValueError, match="Unknown source_type"):
@@ -162,134 +153,3 @@ class TestChunkCoverage:
         all_chunk_text = " ".join(chunks)
         for w in words:
             assert w in all_chunk_text, f"Word {w!r} missing from chunks"
-
-
-# ---------------------------------------------------------------------------
-# AST chunking — _ast_chunk_source
-# ---------------------------------------------------------------------------
-
-class TestAstChunkSource:
-    def test_python_two_functions_produce_two_chunks(self):
-        content = (
-            "def greet(name):\n"
-            "    return f'Hello, {name}'\n"
-            "\n"
-            "def farewell(name):\n"
-            "    return f'Goodbye, {name}'\n"
-        )
-        chunks = _ast_chunk_source(content, "python", "utils.py")
-        assert len(chunks) == 2
-        # Each chunk must contain its function signature
-        assert any("def greet" in c for c in chunks)
-        assert any("def farewell" in c for c in chunks)
-
-    def test_python_function_chunk_prefixed_with_file(self):
-        content = "def hello():\n    pass\n"
-        chunks = _ast_chunk_source(content, "python", "services/auth.py")
-        assert len(chunks) == 1
-        assert chunks[0].startswith("# file: services/auth.py")
-
-    def test_python_class_methods_emit_class_prefix(self):
-        content = (
-            "class Auth:\n"
-            "    def validate_token(self, token):\n"
-            "        return True\n"
-            "\n"
-            "    def refresh(self):\n"
-            "        pass\n"
-        )
-        chunks = _ast_chunk_source(content, "python", "services/auth.py")
-        assert len(chunks) == 2
-        for chunk in chunks:
-            assert "# class: Auth" in chunk
-
-    def test_malformed_file_falls_back_to_sliding_window(self):
-        # tree-sitter is resilient — use an unsupported language to trigger fallback
-        content = "def broken syntax @@@ {\n  foo bar baz\n}"
-        # Use unsupported extension to force fallback
-        chunks = _ast_chunk_source(content, "cobol", "legacy.cob")
-        assert len(chunks) >= 1
-        assert all(isinstance(c, str) for c in chunks)
-
-    def test_zero_nodes_falls_back_to_sliding_window(self):
-        # A file with no top-level function/class nodes (only comments/imports)
-        content = "# just a comment\nimport os\n"
-        chunks = _ast_chunk_source(content, "python", "empty_defs.py")
-        # Should fall back and return at least one chunk
-        assert len(chunks) >= 1
-
-    def test_typescript_function_indexed(self):
-        content = (
-            "function authenticate(token: string): boolean {\n"
-            "    return token.length > 0;\n"
-            "}\n"
-        )
-        chunks = _ast_chunk_source(content, "typescript", "src/auth.ts")
-        assert len(chunks) == 1
-        assert "authenticate" in chunks[0]
-        assert "# file: src/auth.ts" in chunks[0]
-
-    def test_typescript_class_methods_emit_class_prefix(self):
-        content = (
-            "class UserService {\n"
-            "    validateToken(token: string): boolean {\n"
-            "        return token.length > 0;\n"
-            "    }\n"
-            "    async refresh(): Promise<void> {\n"
-            "        return;\n"
-            "    }\n"
-            "}\n"
-        )
-        chunks = _ast_chunk_source(content, "typescript", "src/user.ts")
-        assert len(chunks) == 2
-        for chunk in chunks:
-            assert "# class: UserService" in chunk
-
-    def test_typescript_arrow_function_indexed(self):
-        content = (
-            "const authenticate = async (token: string): Promise<boolean> => {\n"
-            "    return token.length > 0;\n"
-            "};\n"
-        )
-        chunks = _ast_chunk_source(content, "typescript", "src/auth.ts")
-        assert len(chunks) == 1
-        assert "authenticate" in chunks[0]
-
-    def test_go_function_indexed(self):
-        content = (
-            "package main\n\n"
-            "func Add(a, b int) int {\n"
-            "    return a + b\n"
-            "}\n"
-        )
-        chunks = _ast_chunk_source(content, "go", "pkg/math.go")
-        assert any("Add" in c for c in chunks)
-        assert any("# file: pkg/math.go" in c for c in chunks)
-
-    def test_large_node_is_split(self):
-        # Function body > 6000 chars should be split into multiple sub-chunks
-        body_lines = ["    variable_name_long = 'some string value number " + str(i) + "'\n" for i in range(200)]
-        content = "def huge_function():\n" + "".join(body_lines)
-        assert len(content) > 6000, f"Content too small: {len(content)}"
-        chunks = _ast_chunk_source(content, "python", "big.py")
-        assert len(chunks) > 1
-        # Each sub-chunk should be prefixed with the function signature
-        for chunk in chunks:
-            assert "def huge_function" in chunk
-
-
-# ---------------------------------------------------------------------------
-# source_code via chunk_document dispatcher
-# ---------------------------------------------------------------------------
-
-class TestChunkDocumentSourceCode:
-    def test_source_code_python_dispatches_to_ast(self):
-        content = "def foo():\n    pass\ndef bar():\n    pass\n"
-        chunks = chunk_document("source_code", content, source_path="mod.py")
-        assert len(chunks) == 2
-
-    def test_source_code_no_source_path_falls_back(self):
-        # Empty source_path → unknown extension → sliding window fallback
-        content = "some code here " * 5
-        chunks = chunk_document("source_code", content, source_path="")
-        assert len(chunks) >= 1

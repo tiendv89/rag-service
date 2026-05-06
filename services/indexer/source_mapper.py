@@ -12,8 +12,8 @@ Supported mappings (from technical design):
   agents/<id>/log.jsonl                 → task_log
   CLAUDE.md, CLAUDE.shared.md           → claude_md
   README.md (top-level per repo)        → readme
-  **/*.py, **/*.ts, **/*.tsx, **/*.js,
-  **/*.go (excl. build dirs)            → source_code
+Source code files (.py, .ts, .tsx, .js, .go) are NOT indexed.
+Code queries are handled by GitNexus.
 
 Not indexed: node_modules, vendor/, binaries, .env files, build artifacts.
 """
@@ -41,8 +41,6 @@ _PATTERNS: list[tuple[re.Pattern, str, Optional[int]]] = [
     (re.compile(r"(?:^|/)CLAUDE(?:\.shared)?\.md$"), "claude_md", None),
     # top-level README per repo
     (re.compile(r"^README\.md$"), "readme", None),
-    # source code files
-    (re.compile(r"\.(py|ts|tsx|js|go)$"), "source_code", None),
 ]
 
 # Paths that must never be indexed
