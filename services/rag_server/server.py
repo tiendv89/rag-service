@@ -24,9 +24,8 @@ from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
-from starlette.types import Receive, Scope, Send
 
 from services.rag_server.embedder import Embedder
 from services.shared.qdrant_init import query_points
@@ -285,22 +284,30 @@ def create_app(
     # FastMCP.sse_app() hardcodes stateless=False, causing a harmless but noisy
     # warning when Claude Code sends a tool call before the MCP 'initialized'
     # notification is processed (a race that occurs on every executor startup).
+    #
+    # Use Route (not Mount) for the SSE endpoint so Starlette does NOT set
+    # root_path on the scope. Mount("/sse", ...) would set root_path="/sse",
+    # causing SseServerTransport to advertise "/sse/messages/" to clients while
+    # handle_post_message is mounted at "/messages/" — the POST never reaches
+    # the right handler. Route keeps root_path empty so clients POST to
+    # "/messages/" as expected.
     _sse = SseServerTransport("/messages/")
 
-    async def handle_sse(scope: Scope, receive: Receive, send: Send) -> None:
-        async with _sse.connect_sse(scope, receive, send) as streams:
+    async def handle_sse(request: Request) -> Response:
+        async with _sse.connect_sse(request.scope, request.receive, request._send) as streams:
             await mcp_server._mcp_server.run(
                 streams[0],
                 streams[1],
                 mcp_server._mcp_server.create_initialization_options(),
                 stateless=True,
             )
+        return Response()
 
     return Starlette(
         routes=[
             Route("/health", health),
             Route("/query", query_endpoint, methods=["POST"]),
-            Mount("/sse", app=handle_sse),
+            Route("/sse", endpoint=handle_sse, methods=["GET"]),
             Mount("/messages/", app=_sse.handle_post_message),
         ],
         lifespan=lifespan,
