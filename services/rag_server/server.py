@@ -19,12 +19,14 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.sse import SseServerTransport
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
+from starlette.types import Receive, Scope, Send
 
 from services.rag_server.embedder import Embedder
 from services.shared.qdrant_init import query_points
@@ -279,11 +281,28 @@ def create_app(
 
         return JSONResponse({"results": results})
 
+    # Build SSE transport manually so we can pass stateless=True to run().
+    # FastMCP.sse_app() hardcodes stateless=False, causing a harmless but noisy
+    # warning when Claude Code sends a tool call before the MCP 'initialized'
+    # notification is processed (a race that occurs on every executor startup).
+    _sse = SseServerTransport("/messages/")
+
+    async def handle_sse(scope: Scope, receive: Receive, send: Send) -> None:
+        async with _sse.connect_sse(scope, receive, send) as streams:
+            await mcp_server._mcp_server.run(
+                streams[0],
+                streams[1],
+                mcp_server._mcp_server.create_initialization_options(),
+                stateless=True,
+            )
+        return Response()
+
     return Starlette(
         routes=[
             Route("/health", health),
             Route("/query", query_endpoint, methods=["POST"]),
-            Mount("/", app=mcp_server.sse_app()),
+            Route("/sse", handle_sse),
+            Mount("/messages/", app=_sse.handle_post_message),
         ],
         lifespan=lifespan,
     )
