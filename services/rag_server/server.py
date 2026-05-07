@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from starlette.types import Receive, Scope, Send
 
@@ -295,13 +295,12 @@ def create_app(
                 mcp_server._mcp_server.create_initialization_options(),
                 stateless=True,
             )
-        return Response()
 
     return Starlette(
         routes=[
             Route("/health", health),
             Route("/query", query_endpoint, methods=["POST"]),
-            Route("/sse", handle_sse),
+            Mount("/sse", app=handle_sse),
             Mount("/messages/", app=_sse.handle_post_message),
         ],
         lifespan=lifespan,
