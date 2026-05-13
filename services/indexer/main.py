@@ -33,6 +33,7 @@ The indexer:
 import hashlib
 import logging
 import os
+import re
 import signal
 import time
 import uuid
@@ -40,11 +41,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import yaml
 from qdrant_client import QdrantClient
 
 from services.indexer.chunker import chunk_document
 from services.indexer.embedder import Embedder
 from services.indexer.git_watcher import GitWatcher
+from services.indexer.pr_indexer import PrIndexer
 from services.indexer.source_mapper import classify_path
 from services.indexer.workspace_resolver import load_repo_paths, resolve_ssh_key
 from services.shared.qdrant_init import init_collection, upsert_points
@@ -68,6 +71,23 @@ def _handle_sigterm(signum, frame) -> None:  # noqa: ANN001
 
 signal.signal(signal.SIGTERM, _handle_sigterm)
 signal.signal(signal.SIGINT, _handle_sigterm)
+
+
+# ---------------------------------------------------------------------------
+# GitHub URL helpers
+# ---------------------------------------------------------------------------
+
+_SSH_GITHUB = re.compile(r"git@github\.com:(?P<full>[^/]+/[^.]+?)(?:\.git)?$")
+_HTTPS_GITHUB = re.compile(r"https://github\.com/(?P<full>[^/]+/[^.]+?)(?:\.git)?$")
+
+
+def _parse_github_full_name(url: str) -> Optional[str]:
+    """Convert a GitHub SSH or HTTPS URL to 'org/repo', or None if not parseable."""
+    for pat in (_SSH_GITHUB, _HTTPS_GITHUB):
+        m = pat.match(url.strip())
+        if m:
+            return m.group("full")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -188,11 +208,15 @@ def run(
     poll_interval: int = 300,
     embedder: Optional[Embedder] = None,
     ssh_key_path: Optional[str] = None,
+    workspace_repos: Optional[list[dict]] = None,
 ) -> None:
     """
     Run the indexer polling loop.
 
     This function blocks until a SIGTERM/SIGINT is received.
+
+    workspace_repos: raw repo dicts from workspace.yaml (id + github fields)
+        used for PR indexing. If None or GITHUB_TOKEN is unset, PR indexing is skipped.
     """
     client = QdrantClient(url=qdrant_url)
 
@@ -209,6 +233,18 @@ def run(
         embedder = Embedder()
 
     watchers = {rp: GitWatcher(rp, ssh_key_path=ssh_key_path) for rp in repo_paths}
+
+    github_token = os.environ.get("GITHUB_TOKEN")
+    pr_indexer: Optional[PrIndexer] = None
+    if github_token and workspace_repos:
+        pr_indexer = PrIndexer(
+            github_token=github_token,
+            qdrant_client=client,
+            embedder=embedder,
+            workspace_id=workspace_id,
+        )
+    elif not github_token:
+        logger.warning("GITHUB_TOKEN not set — PR indexing skipped")
 
     while not _SHUTDOWN:
         cycle_start = time.monotonic()
@@ -227,6 +263,23 @@ def run(
             except Exception:
                 logger.exception("Error indexing repo %s — skipping this cycle", repo_path)
 
+        if pr_indexer and workspace_repos:
+            for repo in workspace_repos:
+                repo_id = repo.get("id", "")
+                github_url = repo.get("github", "")
+                if not repo_id or not github_url:
+                    continue
+                full_name = _parse_github_full_name(github_url)
+                if not full_name:
+                    logger.debug("Cannot parse github URL for repo %r: %s", repo_id, github_url)
+                    continue
+                try:
+                    count = pr_indexer.index_repo_prs(full_name, repo_id)
+                    if count > 0:
+                        logger.info("Indexed %d new PR(s) for %s", count, repo_id)
+                except Exception:
+                    logger.exception("Error indexing PRs for repo %s — skipping", repo_id)
+
         elapsed = time.monotonic() - cycle_start
         sleep_time = max(0.0, poll_interval - elapsed)
         logger.info(
@@ -241,6 +294,17 @@ def run(
             time.sleep(min(1.0, deadline - time.monotonic()))
 
     logger.info("Indexer stopped.")
+
+
+def _load_workspace_repos(workspace_yaml_path: str) -> list[dict]:
+    """Return the raw repos[] list from workspace.yaml (id + github fields)."""
+    try:
+        with open(workspace_yaml_path, encoding="utf-8") as fh:
+            config = yaml.safe_load(fh) or {}
+        return config.get("repos", [])
+    except Exception as exc:
+        logger.warning("Cannot load workspace repos from %s: %s", workspace_yaml_path, exc)
+        return []
 
 
 def main() -> None:
@@ -261,6 +325,7 @@ def main() -> None:
             "check that repos[].local_path env vars are set in the container"
         )
 
+    workspace_repos = _load_workspace_repos(workspace_yaml_path)
     poll_interval = int(os.environ.get("INDEXER_POLL_INTERVAL_SECONDS", "300"))
 
     run(
@@ -269,6 +334,7 @@ def main() -> None:
         repo_paths=repo_paths,
         poll_interval=poll_interval,
         ssh_key_path=ssh_key_path,
+        workspace_repos=workspace_repos,
     )
 
 

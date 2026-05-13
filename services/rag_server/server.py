@@ -135,7 +135,7 @@ async def rag_query(
             workspace_id are rejected with a clear error.
         top_k: Number of ranked chunks to return (default: 5).
         source_types: Optional list of source_type values to restrict results
-            (skill, task_log, product_spec, technical_design, readme, claude_md).
+            (skill, task_log, product_spec, technical_design, readme, claude_md, pr_description).
 
     Returns:
         A list of ranked chunks.  Each item contains:
