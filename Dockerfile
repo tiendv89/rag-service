@@ -21,6 +21,14 @@ ENV SERVICE=rag_server
 # workspace.yaml lists the repos to index; each repo must also be mounted
 # so the indexer can read file history.
 
+# PR index cursor state file. Mount a volume for persistence across container restarts.
+# Without this mount, cold start triggers a full re-index on each restart (safe, upsert is idempotent).
+# Example docker run flags for persistence:
+#   -v pr_index_state:/app/pr_index_state.json
+# Or in docker-compose:
+#   volumes:
+#     - pr_index_state:/app/pr_index_state.json
+
 CMD if [ "$SERVICE" = "indexer" ]; then \
       exec python -m services.indexer.main; \
     else \
