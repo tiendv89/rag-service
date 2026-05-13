@@ -19,6 +19,7 @@ VALID_SOURCE_TYPES = frozenset({
     "readme",
     "claude_md",
     "doc",
+    "pr_description",
 })
 
 

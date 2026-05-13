@@ -100,6 +100,14 @@ def chunk_document(source_type: str, content: str, source_path: str = "") -> lis
     if source_type == "task_log":
         return _chunk_task_log(content)
 
+    if source_type == "pr_description":
+        text = content.strip()
+        if not text:
+            return []
+        if _approx_token_count(text) <= 1024:
+            return [text]
+        return _sliding_window_chunks(text)
+
     raise ValueError(f"Unknown source_type: {source_type!r}")
 
 
