@@ -37,18 +37,35 @@ class GitWatcher:
 
     def pull(self) -> None:
         """
-        Run `git pull` in the repo to fetch the latest changes.
+        Sync the local repo to match origin exactly.
 
-        Failures are logged as warnings but do not raise — the indexer
-        continues with the locally available state.
+        Uses fetch + reset --hard so rebases and force-pushes on origin are
+        always reflected. Safe because the indexer is read-only.
+        Failures are logged as warnings but do not raise.
         """
-        result = self._run(["git", "pull", "--ff-only"], use_ssh=True)
-        if result.returncode != 0:
+        fetch = self._run(["git", "fetch", "origin"], use_ssh=True)
+        if fetch.returncode != 0:
             logger.warning(
-                "git pull failed in %s (exit %d): %s",
+                "git fetch failed in %s (exit %d): %s",
                 self._repo,
-                result.returncode,
-                result.stderr.strip(),
+                fetch.returncode,
+                fetch.stderr.strip(),
+            )
+            return
+
+        # Resolve the remote tracking branch so we reset to the right ref
+        # regardless of what the local branch name is.
+        ref = self._run(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+        remote_ref = ref.stdout.strip() if ref.returncode == 0 else "origin/HEAD"
+
+        reset = self._run(["git", "reset", "--hard", remote_ref])
+        if reset.returncode != 0:
+            logger.warning(
+                "git reset --hard %s failed in %s (exit %d): %s",
+                remote_ref,
+                self._repo,
+                reset.returncode,
+                reset.stderr.strip(),
             )
 
     def changed_files(self) -> list[str]:

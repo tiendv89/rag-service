@@ -10,6 +10,12 @@ RUN uv pip install --system --no-cache -r requirements.txt
 COPY . .
 RUN uv pip install --system --no-cache -e .
 
+# Pre-download the embedding model so containers start without needing HuggingFace
+# network access at runtime. All proxy-related env vars are cleared from within Python
+# before httpx is imported — Docker Desktop can inject a broken bare-IPv6 proxy URL
+# (e.g. ALL_PROXY=b51a:cc66:f0::) that causes httpx.InvalidURL at client construction.
+RUN python -c "import os; [os.environ.pop(k) for k in list(os.environ) if 'proxy' in k.lower()]; from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-base-en-v1.5')"
+
 # SERVICE selects which app to run: rag_server (default) or indexer.
 # Override at runtime: docker run -e SERVICE=indexer ...
 ENV SERVICE=rag_server
