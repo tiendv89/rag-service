@@ -51,6 +51,7 @@ class QueryRequest(BaseModel):
     workspace_id: str
     top_k: int = 5
     source_types: Optional[list[str]] = None
+    feature_id: Optional[str] = None
 
 
 class QueryResultItem(BaseModel):
@@ -73,6 +74,7 @@ async def _rag_query(
     workspace_id: str,
     top_k: int = 5,
     source_types: Optional[list[str]] = None,
+    feature_id: Optional[str] = None,
 ) -> list[dict]:
     """Core retrieval logic: embed query, search Qdrant, return ranked chunks."""
     if not workspace_id:
@@ -98,6 +100,7 @@ async def _rag_query(
         query_vector=query_vector,
         top_k=top_k,
         source_types=source_types,
+        feature_id=feature_id,
     )
 
     return [
@@ -125,6 +128,7 @@ async def rag_query(
     workspace_id: str,
     top_k: int = 5,
     source_types: Optional[list[str]] = None,
+    feature_id: Optional[str] = None,
 ) -> list[dict]:
     """
     Query the RAG index for the most relevant document chunks matching the query.
@@ -136,6 +140,9 @@ async def rag_query(
         top_k: Number of ranked chunks to return (default: 5).
         source_types: Optional list of source_type values to restrict results
             (skill, task_log, product_spec, technical_design, readme, claude_md, pr_description).
+        feature_id: Optional feature scope filter.  When set, only chunks
+            indexed under this feature_id are returned, preventing cross-feature
+            contamination from semantically similar prior features.
 
     Returns:
         A list of ranked chunks.  Each item contains:
@@ -145,7 +152,7 @@ async def rag_query(
             feature_id  — feature scope (null for workspace-wide documents)
             score       — cosine similarity score in [0, 1]
     """
-    return await _rag_query(query, workspace_id, top_k, source_types)
+    return await _rag_query(query, workspace_id, top_k, source_types, feature_id)
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +264,7 @@ def create_app(
                 workspace_id=req.workspace_id,
                 top_k=req.top_k,
                 source_types=req.source_types,
+                feature_id=req.feature_id,
             )
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=422)

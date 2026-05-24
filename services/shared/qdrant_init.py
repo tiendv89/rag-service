@@ -158,6 +158,7 @@ def query_points(
     query_vector: list[float],
     top_k: int = 5,
     source_types: Optional[list[str]] = None,
+    feature_id: Optional[str] = None,
 ) -> list[dict]:
     """
     Query the workspace collection for the top-k most similar vectors.
@@ -167,6 +168,10 @@ def query_points(
 
     Optional source_types further restricts results to the given source type
     values.
+
+    Optional feature_id scopes the search to a single feature, preventing
+    cross-feature contamination when chunks from prior features share keywords
+    with the current task title.
 
     Returns a list of dicts with keys: id, score, payload.
     """
@@ -184,6 +189,11 @@ def query_points(
                 "key": "source_type",
                 "match": {"any": source_types},
             }
+        )
+
+    if feature_id:
+        workspace_filter["must"].append(
+            {"key": "feature_id", "match": {"value": feature_id}}
         )
 
     collection = collection_name_for(workspace_id)
