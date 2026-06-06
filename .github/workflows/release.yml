@@ -1,0 +1,118 @@
+name: Release Workflow
+
+# Build and publish the rag-service image to GHCR at a chosen version.
+# The single image runs either the rag_server (default) or the indexer,
+# selected at runtime via the SERVICE env var — so one image covers both
+# services in this repo.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.2.3 or v1.2.3)"
+        type: string
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version_tag: ${{ steps.version_tag.outputs.value }}
+      version_raw: ${{ steps.version_tag.outputs.raw }}
+    steps:
+      - name: Format version tag
+        id: version_tag
+        env:
+          INPUT_TAG: ${{ github.event.inputs.version }}
+        run: |
+          TAG=${INPUT_TAG#v}
+          echo "value=v$TAG" >> "$GITHUB_OUTPUT"
+          echo "raw=$TAG" >> "$GITHUB_OUTPUT"
+
+  build-and-push-image:
+    needs:
+      - prepare
+    runs-on: ubuntu-latest
+    env:
+      VERSION_RAW: ${{ needs.prepare.outputs.version_raw }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set image name
+        id: set_image
+        run: |
+          IMAGE_BASE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "IMAGE_BASE=$IMAGE_BASE" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=$IMAGE_BASE:$VERSION_RAW" >> "$GITHUB_ENV"
+          echo "IMAGE_LATEST=$IMAGE_BASE:latest" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}
+            ${{ env.IMAGE_LATEST }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Ensure package visibility is private (best-effort)
+        continue-on-error: true
+        run: |
+          PACKAGE_NAME=$(echo '${{ github.repository }}' | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]')
+          # tiendv89 is a user account (not an org), so use the user-packages endpoint.
+          curl -sS -X PATCH \
+            -H "Authorization: token ${{ secrets.ACTIONS_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/user/packages/container/${PACKAGE_NAME}" \
+            -d '{"visibility":"private"}' || true
+
+  release:
+    needs:
+      - prepare
+      - build-and-push-image
+    runs-on: ubuntu-latest
+    env:
+      VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Create tag
+        run: |
+          git tag -d "$VERSION_TAG" 2> /dev/null || echo "Release tag '$VERSION_TAG' does NOT exist"
+          git tag --annotate --message "rag-service $VERSION_TAG" "$VERSION_TAG"
+          git push --force origin "refs/tags/$VERSION_TAG"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ env.VERSION_TAG }}
+          prerelease: false
+          name: "rag-service ${{ env.VERSION_TAG }}"
