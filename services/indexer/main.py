@@ -4,12 +4,19 @@ Indexer service entry point.
 Environment variables:
   QDRANT_URL                     URL of the Qdrant instance (required)
   WORKSPACE_ID                   Workspace partition key (required)
-  WORKSPACE_YAML_PATH            Path to workspace.yaml mounted inside the container
-                                 (required; e.g. /workspace/workspace.yaml)
+  WORKSPACE_URL                  SSH (or HTTPS) URL of the workspace management
+                                 repo. The indexer clones it and reads
+                                 workspace.yaml from inside the clone — no host
+                                 bind mount needed (mirrors the GitNexus indexer).
+                                 Preferred over WORKSPACE_YAML_PATH.
+  WORKSPACE_YAML_PATH            Path to a pre-mounted workspace.yaml (fallback for
+                                 local dev / tests when WORKSPACE_URL is unset).
+  WORKSPACE_CLONE_DIR            Directory the workspace repo is cloned into
+                                 (default: /tmp/indexer-workspace).
   INDEXER_POLL_INTERVAL_SECONDS  Polling interval in seconds (default: 300)
   SSH_PRIVATE_KEY                Raw PEM content of an SSH private key (optional;
-                                 written to a temp file at startup; used when repos
-                                 are not pre-mounted in k8s/cloud)
+                                 written to a temp file at startup; used to clone
+                                 the workspace repo and any repos not pre-mounted)
 
   Repo paths are resolved from workspace.yaml → repos[] at startup using a
   clone-or-pull strategy:
@@ -49,7 +56,11 @@ from services.indexer.embedder import Embedder
 from services.indexer.git_watcher import GitWatcher
 from services.indexer.pr_indexer import PrIndexer
 from services.indexer.source_mapper import classify_path
-from services.indexer.workspace_resolver import load_repo_paths, resolve_ssh_key
+from services.indexer.workspace_resolver import (
+    bootstrap_workspace,
+    load_repo_paths,
+    resolve_ssh_key,
+)
 from services.shared.qdrant_init import init_collection, upsert_points
 from services.shared.schema import ChunkPayload
 
@@ -307,17 +318,37 @@ def _load_workspace_repos(workspace_yaml_path: str) -> list[dict]:
         return []
 
 
+def _resolve_workspace_yaml_path(ssh_key_path: Optional[str]) -> str:
+    """
+    Determine the path to workspace.yaml.
+
+    Preference order:
+      1. WORKSPACE_URL — clone/refresh the management repo and read
+         workspace.yaml from inside it (production / VM deployment).
+      2. WORKSPACE_YAML_PATH — a pre-mounted workspace.yaml (local dev / tests).
+    """
+    workspace_url = os.environ.get("WORKSPACE_URL", "")
+    if workspace_url:
+        clone_base = os.environ.get("WORKSPACE_CLONE_DIR", "/tmp/indexer-workspace")
+        return bootstrap_workspace(workspace_url, clone_base, ssh_key_path)
+
+    workspace_yaml_path = os.environ.get("WORKSPACE_YAML_PATH", "")
+    if workspace_yaml_path:
+        return workspace_yaml_path
+
+    raise ValueError(
+        "Set WORKSPACE_URL (SSH URL of the workspace management repo) so the "
+        "indexer can clone workspace.yaml, or WORKSPACE_YAML_PATH to point at a "
+        "pre-mounted workspace.yaml."
+    )
+
+
 def main() -> None:
     qdrant_url = os.environ["QDRANT_URL"]
     workspace_id = os.environ["WORKSPACE_ID"]
 
-    workspace_yaml_path = os.environ.get("WORKSPACE_YAML_PATH", "")
-    if not workspace_yaml_path:
-        raise ValueError(
-            "WORKSPACE_YAML_PATH must be set — path to the mounted workspace.yaml"
-        )
-
     ssh_key_path = resolve_ssh_key()
+    workspace_yaml_path = _resolve_workspace_yaml_path(ssh_key_path)
     repo_paths = load_repo_paths(workspace_yaml_path, ssh_key_path=ssh_key_path)
     if not repo_paths:
         raise ValueError(

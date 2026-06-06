@@ -13,6 +13,7 @@ import yaml
 from services.indexer.workspace_resolver import (
     _build_git_ssh_command,
     _ensure_cloned,
+    bootstrap_workspace,
     resolve_ssh_key as _resolve_ssh_key,
     load_repo_paths,
 )
@@ -83,6 +84,60 @@ class TestEnsureCloned:
             with patch("services.indexer.workspace_resolver._clone_repo", return_value=False):
                 result = _ensure_cloned("fail-repo", "git@github.com:org/fail.git", None)
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# bootstrap_workspace — clone the management repo to read workspace.yaml
+# ---------------------------------------------------------------------------
+
+class TestBootstrapWorkspace:
+    def test_empty_url_raises(self):
+        with pytest.raises(ValueError, match="WORKSPACE_URL"):
+            bootstrap_workspace("", "/tmp/ws", None)
+
+    def test_clones_when_missing_and_returns_yaml_path(self, tmp_path):
+        dest = tmp_path / "_workspace"
+
+        def fake_clone(url, target, key):
+            target.mkdir(parents=True, exist_ok=True)
+            (target / ".git").mkdir()
+            (target / "workspace.yaml").write_text("repos: []", encoding="utf-8")
+            return True
+
+        with patch("services.indexer.workspace_resolver._clone_repo", side_effect=fake_clone) as mock_clone:
+            result = bootstrap_workspace("git@github.com:org/ws.git", tmp_path, "/key")
+
+        mock_clone.assert_called_once_with("git@github.com:org/ws.git", dest, "/key")
+        assert result == str(dest / "workspace.yaml")
+
+    def test_refreshes_when_already_cloned(self, tmp_path):
+        dest = tmp_path / "_workspace"
+        dest.mkdir()
+        (dest / ".git").mkdir()
+        (dest / "workspace.yaml").write_text("repos: []", encoding="utf-8")
+
+        with patch("services.indexer.workspace_resolver._pull_repo", return_value=True) as mock_pull:
+            with patch("services.indexer.workspace_resolver._clone_repo") as mock_clone:
+                result = bootstrap_workspace("git@github.com:org/ws.git", tmp_path, None)
+
+        mock_pull.assert_called_once_with(dest, None)
+        mock_clone.assert_not_called()
+        assert result == str(dest / "workspace.yaml")
+
+    def test_raises_when_clone_fails(self, tmp_path):
+        with patch("services.indexer.workspace_resolver._clone_repo", return_value=False):
+            with pytest.raises(RuntimeError, match="Failed to clone"):
+                bootstrap_workspace("git@github.com:org/ws.git", tmp_path, None)
+
+    def test_raises_when_yaml_absent_after_clone(self, tmp_path):
+        def fake_clone(url, target, key):
+            target.mkdir(parents=True, exist_ok=True)
+            (target / ".git").mkdir()
+            return True  # no workspace.yaml written
+
+        with patch("services.indexer.workspace_resolver._clone_repo", side_effect=fake_clone):
+            with pytest.raises(FileNotFoundError, match="workspace.yaml not found"):
+                bootstrap_workspace("git@github.com:org/ws.git", tmp_path, None)
 
 
 # ---------------------------------------------------------------------------

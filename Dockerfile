@@ -20,12 +20,14 @@ RUN python -c "import os; [os.environ.pop(k) for k in list(os.environ) if 'proxy
 # Override at runtime: docker run -e SERVICE=indexer ...
 ENV SERVICE=rag_server
 
-# When running as the indexer, workspace.yaml must be mounted into the container
-# and WORKSPACE_YAML_PATH must point to it.  Example docker run flags:
-#   -v /path/to/workspace.yaml:/workspace/workspace.yaml:ro
-#   -e WORKSPACE_YAML_PATH=/workspace/workspace.yaml
-# workspace.yaml lists the repos to index; each repo must also be mounted
-# so the indexer can read file history.
+# When running as the indexer, point WORKSPACE_URL at the workspace management
+# repo. The indexer clones it and reads workspace.yaml from inside the clone —
+# no host bind mount required (mirrors the GitNexus indexer). Example flags:
+#   -e WORKSPACE_URL=git@github.com:org/project-workspace.git
+#   -e SSH_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)"
+# workspace.yaml lists the repos to index; each repo is cloned on demand using
+# the same SSH key. For local dev/tests you may instead mount a workspace.yaml
+# and set WORKSPACE_YAML_PATH to point at it.
 
 # PR index cursor state file. Mount a volume for persistence across container restarts.
 # Without this mount, cold start triggers a full re-index on each restart (safe, upsert is idempotent).

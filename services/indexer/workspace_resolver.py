@@ -26,6 +26,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 _CLONE_BASE = Path("/tmp/indexer-repos")
+_WORKSPACE_CLONE_BASE = Path("/tmp/indexer-workspace")
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +99,84 @@ def _clone_repo(ssh_url: str, dest: Path, ssh_key_path: str | None) -> bool:
         )
         return False
     return True
+
+
+def _pull_repo(dest: Path, ssh_key_path: str | None) -> bool:
+    """
+    Refresh an already-cloned repo via fetch + hard-reset so that rebases and
+    force-pushes on origin are always reflected. Returns True on success.
+
+    Failures are logged as warnings (not raised) so a transient network error
+    falls back to the already-checked-out content rather than crashing.
+    """
+    env = os.environ.copy()
+    if ssh_key_path:
+        env["GIT_SSH_COMMAND"] = _build_git_ssh_command(ssh_key_path)
+
+    for args in (["fetch", "origin"], ["reset", "--hard", "FETCH_HEAD"]):
+        result = subprocess.run(
+            ["git", "-C", str(dest), *args],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "git %s failed for %s: %s",
+                args[0],
+                dest,
+                result.stderr.strip(),
+            )
+            return False
+    return True
+
+
+def bootstrap_workspace(
+    workspace_url: str,
+    base_dir: str | Path = _WORKSPACE_CLONE_BASE,
+    ssh_key_path: str | None = None,
+) -> str:
+    """
+    Clone (or refresh) the workspace management repo and return the path to
+    its ``workspace.yaml``.
+
+    This mirrors the GitNexus indexer: the RAG indexer no longer needs
+    ``workspace.yaml`` bind-mounted from the host. It clones the management
+    repo from ``workspace_url`` and reads ``workspace.yaml`` from inside the
+    clone, so a fresh copy is picked up on every restart.
+
+    Args:
+        workspace_url: SSH (or HTTPS) URL of the workspace management repo.
+        base_dir: Directory the workspace repo is cloned into.
+        ssh_key_path: Path to an SSH private key file (from SSH_PRIVATE_KEY).
+
+    Returns:
+        Absolute path to ``workspace.yaml`` inside the cloned repo.
+
+    Raises:
+        ValueError: If ``workspace_url`` is empty.
+        RuntimeError: If the repo cannot be cloned.
+        FileNotFoundError: If the clone contains no ``workspace.yaml``.
+    """
+    if not workspace_url:
+        raise ValueError("WORKSPACE_URL is required to clone the workspace repo")
+
+    dest = Path(base_dir) / "_workspace"
+
+    if dest.exists() and (dest / ".git").exists():
+        logger.debug("Workspace repo already cloned at %s — refreshing", dest)
+        _pull_repo(dest, ssh_key_path)
+    elif not _clone_repo(workspace_url, dest, ssh_key_path):
+        raise RuntimeError(f"Failed to clone workspace repo from {workspace_url}")
+
+    yaml_path = dest / "workspace.yaml"
+    if not yaml_path.exists():
+        raise FileNotFoundError(
+            f"workspace.yaml not found in workspace repo cloned from "
+            f"{workspace_url} (expected at {yaml_path})"
+        )
+    logger.info("Resolved workspace.yaml from %s → %s", workspace_url, yaml_path)
+    return str(yaml_path)
 
 
 def _ensure_cloned(repo_id: str, ssh_url: str, ssh_key_path: str | None) -> str | None:

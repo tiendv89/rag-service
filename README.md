@@ -37,9 +37,13 @@ file that is **mounted into the container at startup** — not passed as an env 
 |---|---|---|---|
 | `QDRANT_URL` | yes | — | Qdrant instance URL |
 | `WORKSPACE_ID` | yes | — | Workspace partition key used as the Qdrant collection name |
-| `WORKSPACE_YAML_PATH` | yes | — | Path to `workspace.yaml` mounted inside the container (e.g. `/workspace/workspace.yaml`) |
+| `WORKSPACE_URL` | yes¹ | — | SSH (or HTTPS) URL of the workspace management repo. The indexer clones it and reads `workspace.yaml` from inside the clone — no host bind mount needed (mirrors the GitNexus indexer) |
+| `WORKSPACE_YAML_PATH` | yes¹ | — | Path to a pre-mounted `workspace.yaml` (fallback for local dev / tests when `WORKSPACE_URL` is unset) |
+| `WORKSPACE_CLONE_DIR` | no | `/tmp/indexer-workspace` | Directory the workspace repo is cloned into |
 | `INDEXER_POLL_INTERVAL_SECONDS` | no | `300` | Seconds between indexing cycles |
-| `SSH_PRIVATE_KEY` | no | — | Raw PEM content of an SSH private key; written to a temp file at startup; used when cloning repos not mounted on disk (k8s / cloud) |
+| `SSH_PRIVATE_KEY` | no | — | Raw PEM content of an SSH private key; written to a temp file at startup; used to clone the workspace repo and any repos not mounted on disk (k8s / cloud) |
+
+¹ Provide **either** `WORKSPACE_URL` (preferred) **or** `WORKSPACE_YAML_PATH`. `WORKSPACE_URL` takes precedence when both are set.
 
 #### workspace.yaml format
 
@@ -112,13 +116,10 @@ services:
       SERVICE: indexer
       QDRANT_URL: http://qdrant:6333
       WORKSPACE_ID: my-workspace
-      WORKSPACE_YAML_PATH: /workspace/workspace.yaml
+      # Clone the management repo to read workspace.yaml (no host bind mount).
+      WORKSPACE_URL: git@github.com:org/project-workspace.git
+      SSH_PRIVATE_KEY: <raw PEM content of SSH private key>
       INDEXER_POLL_INTERVAL_SECONDS: "60"
-      # Optional — only needed when repos are not pre-mounted (k8s / cloud)
-      # SSH_PRIVATE_KEY: <raw PEM content of SSH private key>
-    volumes:
-      - /path/to/workspace.yaml:/workspace/workspace.yaml:ro
-      - /path/to/local/repos:/repos:ro
     depends_on:
       - qdrant
 
@@ -130,9 +131,11 @@ Key points:
 
 - Set `SERVICE=rag_server` or `SERVICE=indexer` to choose which process runs.
 - Both containers share a Qdrant instance; `QDRANT_URL` must point to it.
-- Mount `workspace.yaml` into the indexer container and set `WORKSPACE_YAML_PATH`
-  to its container path.  The file lists which repos to index.
-- The indexer also needs each repo mounted as a volume so it can read file history.
+- Set `WORKSPACE_URL` to the management repo's git URL. The indexer clones it and
+  reads `workspace.yaml` from inside the clone — no host bind mount required. The
+  file lists which repos to index, and each is cloned on demand using the same
+  `SSH_PRIVATE_KEY`. (For local dev/tests you may instead mount a `workspace.yaml`
+  and set `WORKSPACE_YAML_PATH`.)
 - `WORKSPACE_ID` must match the ID used by the management repo so queries hit
   the correct Qdrant collection.
 
@@ -172,6 +175,9 @@ uv pip install --system -e .
 # Run rag_server locally (Qdrant must be reachable)
 QDRANT_URL=http://localhost:6333 uvicorn services.rag_server.server:create_app --factory --host 0.0.0.0 --port 8000
 
-# Run indexer locally (workspace.yaml must exist at the given path)
+# Run indexer locally — clone the management repo (preferred)
+QDRANT_URL=http://localhost:6333 WORKSPACE_ID=dev WORKSPACE_URL=git@github.com:org/project-workspace.git python -m services.indexer.main
+
+# …or point at a local workspace.yaml (dev/test fallback)
 QDRANT_URL=http://localhost:6333 WORKSPACE_ID=dev WORKSPACE_YAML_PATH=/path/to/workspace.yaml python -m services.indexer.main
 ```

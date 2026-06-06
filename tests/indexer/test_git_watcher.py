@@ -96,12 +96,56 @@ class TestGitWatcher:
     # pull
     # ------------------------------------------------------------------
 
-    def test_pull_calls_git_pull(self, tmp_path):
+    def test_pull_fetches_and_hard_resets_to_upstream(self, tmp_path):
         watcher = GitWatcher(str(tmp_path))
+
+        def side_effect(cmd, use_ssh=False):
+            if "rev-parse" in cmd:
+                return _make_result(stdout="origin/main\n")
+            return _make_result()
+
         with patch.object(watcher, "_run") as mock_run:
-            mock_run.return_value = _make_result()
+            mock_run.side_effect = side_effect
             watcher.pull()
-        mock_run.assert_called_once_with(["git", "pull", "--ff-only"], use_ssh=True)
+
+        mock_run.assert_has_calls(
+            [
+                call(["git", "fetch", "origin"], use_ssh=True),
+                call(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]),
+                call(["git", "reset", "--hard", "origin/main"]),
+            ]
+        )
+
+    def test_pull_resets_to_origin_head_when_no_upstream(self, tmp_path):
+        watcher = GitWatcher(str(tmp_path))
+
+        def side_effect(cmd, use_ssh=False):
+            if "rev-parse" in cmd:
+                # No upstream configured — rev-parse fails.
+                return _make_result(stderr="no upstream", returncode=128)
+            return _make_result()
+
+        with patch.object(watcher, "_run") as mock_run:
+            mock_run.side_effect = side_effect
+            watcher.pull()
+
+        mock_run.assert_has_calls(
+            [call(["git", "reset", "--hard", "origin/HEAD"])]
+        )
+
+    def test_pull_skips_reset_when_fetch_fails(self, tmp_path):
+        watcher = GitWatcher(str(tmp_path))
+
+        def side_effect(cmd, use_ssh=False):
+            if "fetch" in cmd:
+                return _make_result(stderr="network error", returncode=1)
+            raise AssertionError("reset must not run when fetch fails")
+
+        with patch.object(watcher, "_run") as mock_run:
+            mock_run.side_effect = side_effect
+            watcher.pull()  # should not raise
+
+        mock_run.assert_called_once_with(["git", "fetch", "origin"], use_ssh=True)
 
     def test_pull_failure_does_not_raise(self, tmp_path):
         watcher = GitWatcher(str(tmp_path))
